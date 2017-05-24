@@ -1,7 +1,5 @@
 # Blink(1) for Google Calendar (calblink)
 
-[TOC]
-
 ## What is this?
 
 Calblink is a small program to watch your Google Calendar and set a blink(1) USB
