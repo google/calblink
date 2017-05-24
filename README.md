@@ -25,8 +25,7 @@ To use calblink, you need the following:
 1.  A place to put the blink(1) where you can see it.
 2.  The latest version of [Go](https://golang.org/).
 3.  The calblink code, found in this directory.
-4.  libusb, if you're using it on Mac OS X. The
-    [go-blink1](https://github.com/hink/go-blink1) page has details.
+4.  libusb. The [go-blink1](https://github.com/hink/go-blink1) page has details.
 5.  A directory to run this in.
 6.  A few go packages, which we'll install later in the Setup section.
 7.  A Google Calendar account.
@@ -84,18 +83,18 @@ options. conf.json includes several useful options you can set:
     out time with "Make Time" or similar, you can add these names to the
     'excludes' array.
 *   startTime - an HH:MM time (24-hour clock) which calblink won't turn on
-    before. Because you don't really need to have it turning on at 4am.
+    before. Because you might not want it turning on at 4am.
 *   endTime - an HH:MM time (24-hour clock) which it won't turn on after.
-*   skipDays - a list of days of the week that it should skip. Don't need to run
-    it on Saturday/Sunday, after all, and if you WFH every Friday, why distract
-    your coworkers?
+*   skipDays - a list of days of the week that it should skip. A blink(1) in
+    the offices doesn't need to run on Saturday/Sunday, after all, and if you
+    WFH every Friday, why distract your coworkers?
 *   pollInterval - how often (in seconds) it should check with Calendar for an
     update. Default is 30 seconds. Don't push this too frequent or you'll run
     out of API quota.
 *   calendar - which calendar to watch (defaults to primary). This is the email
     address of the calendar - either the calendar's owner, or the ID in its
     details page for a secondary calendar. "primary" is a magic string that
-    means "the main calendar of the person whose auth token I'm using".
+    means "the main calendar of the account whose auth token I'm using".
 *   responseState - which response states are marked as being valid for a
     meeting. Can be set to "all", in which case any item on your calendar will
     light up; "accepted", in which case only items marked as 'accepted' on
@@ -124,7 +123,7 @@ An example file:
         "startTime": "08:45",
         "endTime": "18:00",
         "pollInterval": 60,
-        "calendar":"rbjones@google.com",
+        "calendar":"username@example.com",
         "responseState": "accepted"
     }
 ```
@@ -150,6 +149,9 @@ An example file:
 *   If attempting to install the blink1 go library or run calblink.go on OSX
     gives an error about "'usb.h' file not found", make sure that C_INCLUDE_PATH
     and LIBRARY_PATH are set appropriately.
+*   Sending a SIGQUIT will turn on debug mode while the app is running.  By
+    default on Unix-based systems, this is sent by hitting Ctrl-\\ (backslash).
+    There is currently no way to turn debug mode off once it is set.
 
 ## Legal
 
