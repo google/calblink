@@ -31,7 +31,7 @@ import (
 	"syscall"
 	"time"
 
-	blink1 "github.com/hink/go-blink1"
+	blink1 "github.com/kazrakcom/go-blink1"
 
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
