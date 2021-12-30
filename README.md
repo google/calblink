@@ -110,6 +110,8 @@ options. conf.json includes several useful options you can set:
     *    \> - sleeping because we haven't reached startTime yet today.
     *    ~ - sleeping because it's a skip day
     *    X - device failure.
+*   multiEvent - if true, calblink will check the next two events, and if they are
+    both in the time frame to show, it will show both.
 
 An example file:
 
@@ -122,6 +124,7 @@ An example file:
         "pollInterval": 60,
         "calendar": "username@example.com",
         "responseState": "accepted"
+        "multiEvent": "true"
     }
 ```
 
@@ -129,7 +132,7 @@ An example file:
 
 ## Known Issues
 
-*   If there are more than 10 events that are skipped (all-day events, excluded
+*   If there are more than 20 events that are skipped (all-day events, excluded
     events, and events with the wrong responseState) before the event that
     should be shown, the event will not be processed.
 
