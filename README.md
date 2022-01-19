@@ -20,9 +20,10 @@ LED to change colors based on your next meeting. The colors it will use are:
 
 To use calblink, you need the following:
 
-1.  A blink(1) from [ThingM](http://blink1.thingm.com/) - calblink supports both
-    mk1 and mk2 blink(1), but the mk2 is much nicer.
-1.  A place to put the blink(1) where you can see it.
+1.  A blink(1) from [ThingM](http://blink1.thingm.com/) - calblink supports
+    mk1, mk2, and mk3 blink(1).  Note that setting up a mk3 is a bit more complicated
+    due to a bug in the go-blink1 library.
+1.  A place to connect the blink(1) where you can see it.
 2.  The latest version of [Go](https://golang.org/).
 3.  The calblink code, found in this directory.
 4.  libusb. The [go-blink1](https://github.com/hink/go-blink1) page has details.
@@ -53,6 +54,10 @@ To use calblink, you need the following:
     ```
     go get github.com/hink/go-blink1
     ```
+    
+6.  Note: If you are using a mk3 blink(1), you need to integrate [this pull
+    request](https://github.com/hink/go-blink1/pull/8) to fix an issue in the go-blink1
+    library.
 
 7.  Get an OAuth 2 ID as described in step 1 of the [Google Calendar
     Quickstart](https://developers.google.com/google-apps/calendar/quickstart/go).
@@ -82,6 +87,9 @@ options. conf.json includes several useful options you can set:
 *   excludes - a list of event titles which it will ignore. If you like blocking
     out time with "Make Time" or similar, you can add these names to the
     'excludes' array.
+*   excludePrefix - a list of event title prefixes which it will ignore.  This is useful
+    for blocks that start consistently but may not end consistently, such as "On call,
+    secondary is PERSON".
 *   startTime - an HH:MM time (24-hour clock) which calblink won't turn on
     before. Because you might not want it turning on at 4am.
 *   endTime - an HH:MM time (24-hour clock) which it won't turn on after.
@@ -123,12 +131,12 @@ An example file:
         "startTime": "08:45",
         "endTime": "18:00",
         "pollInterval": 60,
-        "calendar":"username@example.com",
+        "calendar": "username@example.com",
         "responseState": "accepted"
     }
 ```
 
-(Yes, the curly braces are required.)
+(Yes, the curly braces are required.  Sorry.  It's a JSON dictionary.)
 
 ## Known Issues
 
@@ -137,6 +145,9 @@ An example file:
 *   If there are more than 10 events that are skipped (all-day events, excluded
     events, and events with the wrong responseState) before the event that
     should be shown, the event will not be processed.
+*   If the computer goes to sleep while calblink is sleeping, calblink will oversleep.
+    The best current workaround is to kill and restart calblink upon waking from sleep.
+*   There are issues with the mk3 Blink(1) unless the patch mentioned above is in place.
 
 ## Troubleshooting
 
