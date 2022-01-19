@@ -183,6 +183,10 @@ func newBlinkerState(maxFailures int) *blinkerState {
 }
 
 func (blinker *blinkerState) reinitialize() error {
+	if blinker.device != nil {
+		blinker.device.Close()
+		blinker.device = nil
+	}
 	device, err := blink1.OpenNextDevice()
 	if err != nil {
 		blinker.failures++
