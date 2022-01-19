@@ -421,6 +421,8 @@ func nextEvent(items *calendar.Events, userPrefs *userPrefs) *calendar.Event {
 	return nil
 }
 
+// User preferences methods
+
 func readUserPrefs() *userPrefs {
 	userPrefs := &userPrefs{}
 	// Set defaults from command line
@@ -497,6 +499,8 @@ func readUserPrefs() *userPrefs {
 	return userPrefs
 }
 
+// Time calculation methods
+
 func tomorrow() time.Time {
 	now := time.Now()
 	return time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
@@ -506,6 +510,20 @@ func setHourMinuteFromTime(t time.Time) time.Time {
 	now := time.Now()
 	return time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
 }
+
+func sleep(d time.Duration) {
+	// To fix the 'oversleeping' problem where we sleep too long if the machine goes to
+	// sleep in the meantime, sleep for no more than 5 minutes at once.
+	// TODO: Once the AbsoluteNow proposal goes in, replace this with that.
+	max := time.Duration(5) * time.Minute
+	if d > max {
+		fmt.Fprintf(debugOut, "Cutting sleep short from %d to %d", d, max)
+		d = max
+	}
+	time.Sleep(d)
+}
+
+// Print output methods
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage:\n")
@@ -635,7 +653,7 @@ func main() {
 			black.execute(blinkerState)
 			fmt.Fprintf(debugOut, "Sleeping %v until tomorrow because it's a skip day\n", untilTomorrow)
 			fmt.Fprint(dotOut, "~")
-			time.Sleep(untilTomorrow)
+			sleep(untilTomorrow)
 			continue
 		}
 		if userPrefs.startTime != nil {
@@ -645,7 +663,7 @@ func main() {
 				black.execute(blinkerState)
 				fmt.Fprintf(debugOut, "Sleeping %v because start time after now\n", -diff)
 				fmt.Fprint(dotOut, ">")
-				time.Sleep(-diff)
+				sleep(-diff)
 				continue
 			}
 		}
@@ -658,7 +676,7 @@ func main() {
 				untilTomorrow := tomorrow.Sub(now)
 				fmt.Fprintf(debugOut, "Sleeping %v until tomorrow because end time %v before now\n", untilTomorrow, diff)
 				fmt.Fprint(dotOut, "<")
-				time.Sleep(untilTomorrow)
+				sleep(untilTomorrow)
 				continue
 			}
 		}
@@ -673,7 +691,7 @@ func main() {
 				magentaFlash.execute(blinkerState)
 			}
 			fmt.Fprint(dotOut, ",")
-			time.Sleep(time.Duration(userPrefs.pollInterval) * time.Second)
+			sleep(time.Duration(userPrefs.pollInterval) * time.Second)
 			continue
 		} else {
 			failures = 0
@@ -708,6 +726,6 @@ func main() {
 		}
 		blinkState.execute(blinkerState)
 		fmt.Fprint(dotOut, ".")
-		time.Sleep(time.Duration(userPrefs.pollInterval) * time.Second)
+		sleep(time.Duration(userPrefs.pollInterval) * time.Second)
 	}
 }
