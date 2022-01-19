@@ -1,11 +1,11 @@
 // Copyright 2017 Google Inc.
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -27,6 +27,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -44,6 +45,7 @@ import (
 // JSON file with the following structure:
 // {
 //   excludes: [ "event", "names", "to", "ignore"],
+//   excludePrefixes: [ "prefixes", "to", "ignore"],
 //   startTime: "hh:mm (24 hr format) to start blinking at every day",
 //   endTime: "hh:mm (24 hr format) to stop blinking at every day",
 //   skipDays: [ "weekdays", "to", "skip"],
@@ -52,12 +54,15 @@ import (
 //   responseState: "all"
 //   deviceFailureRetries: 10
 //   showDots: true
+//
 //}
 // Notes on items:
 // Calendar is the calendar ID - the email address of the calendar.  For a person's calendar, that's their email.
-// For a secondary calendar, it's the base64 string @group.calendar.google.com on the calendar details page.
+//   For a secondary calendar, it's the base64 string @group.calendar.google.com on the calendar details page. "primary"
+//   is a magic string that means "the logged-in user's primary calendar".
 // SkipDays may be localized.
 // Excludes is exact string matches only.
+// ExcludePrefixes will exclude all events starting with the given prefix.
 // ResponseState can be one of: "all" (all events whatever their response status), "accepted" (only accepted events),
 // "notRejected" (any events that are not rejected).  Default is notRejected.
 // DeviceFailureRetries is the number of consecutive failures to initialize the device before the program quits. Default is 10.
@@ -103,6 +108,7 @@ func (state responseState) isValidState() bool {
 
 type userPrefs struct {
 	excludes             map[string]bool
+	excludePrefixes      []string
 	startTime            *time.Time
 	endTime              *time.Time
 	skipDays             [7]bool
@@ -116,6 +122,7 @@ type userPrefs struct {
 // Struct used for decoding the JSON
 type prefLayout struct {
 	Excludes             []string
+	ExcludePrefixes      []string
 	StartTime            string
 	EndTime              string
 	SkipDays             []string
@@ -390,10 +397,23 @@ func eventHasAcceptableResponse(item *calendar.Event, responseState responseStat
 	return true
 }
 
+func eventExcludedByPrefs(item string, userPrefs *userPrefs) bool {
+	if userPrefs.excludes[item] {
+		return true
+	}
+	for _, prefix := range userPrefs.excludePrefixes {
+		if strings.HasPrefix(item, prefix) {
+			fmt.Fprintf(debugOut, "Skipping event '%v' due to prefix match '%v'", item, prefix)
+			return true
+		}
+	}
+	return false
+}
+
 func nextEvent(items *calendar.Events, userPrefs *userPrefs) *calendar.Event {
 	for _, i := range items.Items {
 		if i.Start.DateTime != "" &&
-			!userPrefs.excludes[i.Summary] &&
+			!eventExcludedByPrefs(i.Summary, userPrefs) &&
 			eventHasAcceptableResponse(i, userPrefs.responseState) {
 			return i
 		}
@@ -442,6 +462,7 @@ func readUserPrefs() *userPrefs {
 		fmt.Fprintf(debugOut, "Excluding item %v\n", item)
 		userPrefs.excludes[item] = true
 	}
+	userPrefs.excludePrefixes = prefs.ExcludePrefixes
 	weekdays := make(map[string]int)
 	for i := 0; i < 7; i++ {
 		weekdays[time.Weekday(i).String()] = i
@@ -504,6 +525,12 @@ func printStartInfo(userPrefs *userPrefs) {
 	if len(userPrefs.excludes) > 0 {
 		fmt.Println("Excluded events:")
 		for item := range userPrefs.excludes {
+			fmt.Printf("   %v\n", item)
+		}
+	}
+	if len(userPrefs.excludePrefixes) > 0 {
+		fmt.Println("Excluded event prefixes:")
+		for _, item := range userPrefs.excludePrefixes {
 			fmt.Printf("   %v\n", item)
 		}
 	}
