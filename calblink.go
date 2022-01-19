@@ -27,6 +27,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -114,7 +115,7 @@ type userPrefs struct {
 	endTime              *time.Time
 	skipDays             [7]bool
 	pollInterval         int
-	calendar             string
+	calendars            []string
 	responseState        responseState
 	deviceFailureRetries int
 	showDots             bool
@@ -130,6 +131,7 @@ type prefLayout struct {
 	SkipDays             []string
 	PollInterval         int64
 	Calendar             string
+	Calendars            []string
 	ResponseState        string
 	DeviceFailureRetries int64
 	ShowDots             string
@@ -435,9 +437,9 @@ func eventExcludedByPrefs(item string, userPrefs *userPrefs) bool {
 	return false
 }
 
-func nextEvent(items *calendar.Events, userPrefs *userPrefs) []*calendar.Event {
+func nextEvent(items []*calendar.Event, userPrefs *userPrefs) []*calendar.Event {
 	var events []*calendar.Event
-	for _, i := range items.Items {
+	for _, i := range items {
 		if i.Start.DateTime != "" &&
 			!eventExcludedByPrefs(i.Summary, userPrefs) &&
 			eventHasAcceptableResponse(i, userPrefs.responseState) {
@@ -502,12 +504,47 @@ func blinkStateForEvent(next []*calendar.Event) calendarState {
 }
 
 func fetchEvents(t string, srv *calendar.Service, userPrefs *userPrefs) ([]*calendar.Event, error) {
-	events, err := srv.Events.List(userPrefs.calendar).ShowDeleted(false).
-		SingleEvents(true).TimeMin(t).MaxResults(20).OrderBy("startTime").Do()
-	if err != nil {
-		return nil, err
+	var allEvents []*calendar.Event
+	for _, calendar := range userPrefs.calendars {
+		events, err := srv.Events.List(calendar).ShowDeleted(false).
+			SingleEvents(true).TimeMin(t).MaxResults(20).OrderBy("startTime").Do()
+		if err != nil {
+			return nil, err
+		}
+		allEvents = append(allEvents, events.Items...)
 	}
-	return nextEvent(events, userPrefs), nil
+	if len(userPrefs.calendars) > 1 {
+		// Filter out copies of the same event, or ones with times that don't parse.
+		var filtered []*calendar.Event
+		seen := make(map[string]bool)
+		for _, event := range allEvents {
+			if seen[event.Id] {
+			fmt.Fprintf(debugOut, "Skipping duplicate event with ID %v\n", event.Id)
+				continue
+			}
+			_, err := time.Parse(time.RFC3339, event.Start.DateTime)
+			if err != nil {
+				fmt.Fprintf(debugOut, "Parse failure with event %v at time %v: %v\n", event.Summary, event.Start, err)
+				continue
+			}
+			filtered = append(filtered, event)
+			seen[event.Id] = true
+		}
+		sort.SliceStable(filtered, func(i, j int) bool {
+			t1, err1 := time.Parse(time.RFC3339, filtered[i].Start.DateTime)
+			t2, err2 := time.Parse(time.RFC3339, filtered[j].Start.DateTime)
+			// We should have filtered any bad times out already, so this is a fatal error.
+			if err1 != nil {
+				log.Fatalf("Found bad time after times should have been filtered out: %v\n", err1)
+			}
+			if err2 != nil {
+				log.Fatalf("Found bad time after times should have been filtered out: %v\n", err2)
+			}
+			return t1.Before(t2)
+		})
+		allEvents = filtered
+	}
+	return nextEvent(allEvents, userPrefs), nil
 }
 
 // User preferences methods
@@ -516,7 +553,7 @@ func readUserPrefs() *userPrefs {
 	userPrefs := &userPrefs{}
 	// Set defaults from command line
 	userPrefs.pollInterval = *pollIntervalFlag
-	userPrefs.calendar = *calNameFlag
+	userPrefs.calendars = []string{*calNameFlag}
 	userPrefs.responseState = responseState(*responseStateFlag)
 	userPrefs.deviceFailureRetries = *deviceFailureRetriesFlag
 	userPrefs.showDots = *showDotsFlag
@@ -567,7 +604,10 @@ func readUserPrefs() *userPrefs {
 		}
 	}
 	if prefs.Calendar != "" {
-		userPrefs.calendar = prefs.Calendar
+		userPrefs.calendars = []string{prefs.Calendar}
+	}
+	if len(prefs.Calendars) > 0 {
+		userPrefs.calendars = prefs.Calendars
 	}
 	if prefs.PollInterval != 0 {
 		userPrefs.pollInterval = int(prefs.PollInterval)
@@ -621,7 +661,15 @@ func usage() {
 }
 
 func printStartInfo(userPrefs *userPrefs) {
-	fmt.Printf("Running with %v second intervals for calendar ID %v\n", userPrefs.pollInterval, userPrefs.calendar)
+	fmt.Printf("Running with %v second intervals\n", userPrefs.pollInterval)
+	if len(userPrefs.calendars) == 1 {
+		fmt.Printf("Monitoring calendar ID %v\n", userPrefs.calendars[0])
+	} else {
+		fmt.Println("Monitoring calendar IDs:")
+		for _, item := range userPrefs.calendars {
+			fmt.Printf("   %v\n", item)
+		}
+	}
 	switch userPrefs.responseState {
 	case responseStateAll:
 		fmt.Println("All events shown, regardless of accepted/rejected status.")
@@ -689,7 +737,7 @@ func main() {
 	flag.Visit(func(myFlag *flag.Flag) {
 		switch myFlag.Name {
 		case "calendar":
-			userPrefs.calendar = myFlag.Value.String()
+			userPrefs.calendars = []string{myFlag.Value.String()}
 		case "poll_interval":
 			userPrefs.pollInterval = myFlag.Value.(flag.Getter).Get().(int)
 		case "response_state":

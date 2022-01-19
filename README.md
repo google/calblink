@@ -92,6 +92,11 @@ options. conf.json includes several useful options you can set:
     address of the calendar - either the calendar's owner, or the ID in its
     details page for a secondary calendar. "primary" is a magic string that
     means "the main calendar of the account whose auth token I'm using".
+*   calendars - array of calendars to watch.  This will override calendar if it is set.
+    All calendars listed will be watched for events.  Note that the signed-in account
+    must have access to all calendars, and that if you query too many calendars you
+    may run into issues with the free query quota for Google Calendar, especially if
+    you are using your oauth key in multiple locations.
 *   responseState - which response states are marked as being valid for a
     meeting. Can be set to "all", in which case any item on your calendar will
     light up; "accepted", in which case only items marked as 'accepted' on
@@ -122,7 +127,7 @@ An example file:
         "startTime": "08:45",
         "endTime": "18:00",
         "pollInterval": 60,
-        "calendar": "username@example.com",
+        "calendars": ["primary", "username@example.com"],
         "responseState": "accepted"
         "multiEvent": "true"
     }
