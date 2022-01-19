@@ -54,7 +54,7 @@ import (
 //   responseState: "all"
 //   deviceFailureRetries: 10
 //   showDots: true
-//
+//   multiEvent: true
 //}
 // Notes on items:
 // Calendar is the calendar ID - the email address of the calendar.  For a person's calendar, that's their email.
@@ -67,6 +67,7 @@ import (
 // "notRejected" (any events that are not rejected).  Default is notRejected.
 // DeviceFailureRetries is the number of consecutive failures to initialize the device before the program quits. Default is 10.
 // ShowDots indicates whether to show dots and similar marks to indicate that the program has completed an update cycle.
+// MultiEvent indicates whether to show two events if there are multiple events in the time range.
 
 // responseState is an enumerated list of event response states, used to control which events will activate the blink(1).
 type responseState string
@@ -117,6 +118,7 @@ type userPrefs struct {
 	responseState        responseState
 	deviceFailureRetries int
 	showDots             bool
+	multiEvent           bool
 }
 
 // Struct used for decoding the JSON
@@ -131,14 +133,17 @@ type prefLayout struct {
 	ResponseState        string
 	DeviceFailureRetries int64
 	ShowDots             string
+	MultiEvent           string
 }
 
 // calendarState is a display state for the calendar event.  It encapsulates both the colors to display and the flash duration.
 type calendarState struct {
-	name          string
-	blinkState    blink1.State
-	flashState    blink1.State
-	flashDuration time.Duration
+	name           string
+	primary        blink1.State
+	secondary      blink1.State
+	primaryFlash   time.Duration
+	secondaryFlash time.Duration
+	alternate      bool
 }
 
 func (state calendarState) execute(blinker *blinkerState) {
@@ -146,15 +151,15 @@ func (state calendarState) execute(blinker *blinkerState) {
 }
 
 var (
-	black        = calendarState{name: "Black", blinkState: blink1.OffState}
-	green        = calendarState{name: "Green", blinkState: blink1.State{Green: 255}}
-	yellow       = calendarState{name: "Yellow", blinkState: blink1.State{Red: 255, Green: 160}}
-	red          = calendarState{name: "Red", blinkState: blink1.State{Red: 255}}
-	redFlash     = calendarState{name: "Red Flash", blinkState: blink1.State{Red: 255}, flashState: blink1.OffState, flashDuration: time.Duration(500) * time.Millisecond}
-	fastRedFlash = calendarState{name: "Fast Red Flash", blinkState: blink1.State{Red: 255}, flashState: blink1.OffState, flashDuration: time.Duration(125) * time.Millisecond}
-	blueFlash    = calendarState{name: "Red/Blue Flash", blinkState: blink1.State{Blue: 255}, flashState: blink1.State{Red: 255}, flashDuration: time.Duration(500) * time.Millisecond}
-	blue         = calendarState{name: "Blue", blinkState: blink1.State{Blue: 255}}
-	magentaFlash = calendarState{name: "MagentaFlash", blinkState: blink1.State{Red: 255, Blue: 255}, flashState: blink1.OffState, flashDuration: time.Duration(125) * time.Millisecond}
+	black        = calendarState{name: "Black", primary: blink1.OffState}
+	green        = calendarState{name: "Green", primary: blink1.State{Green: 255}, secondary: blink1.State{Green: 255}}
+	yellow       = calendarState{name: "Yellow", primary: blink1.State{Red: 255, Green: 160}, secondary: blink1.State{Red: 255, Green: 160}}
+	red          = calendarState{name: "Red", primary: blink1.State{Red: 255}, secondary: blink1.State{Red: 255}}
+	redFlash     = calendarState{name: "Red Flash", primary: blink1.State{Red: 255}, secondary: blink1.OffState, primaryFlash: time.Duration(500) * time.Millisecond, alternate: true}
+	fastRedFlash = calendarState{name: "Fast Red Flash", primary: blink1.State{Red: 255}, secondary: blink1.OffState, primaryFlash: time.Duration(125) * time.Millisecond, alternate: true}
+	blueFlash    = calendarState{name: "Red/Blue Flash", primary: blink1.State{Blue: 255}, secondary: blink1.State{Red: 255}, primaryFlash: time.Duration(500) * time.Millisecond, alternate: true}
+	blue         = calendarState{name: "Blue", primary: blink1.State{Blue: 255}, secondary: blink1.State{Blue: 255}}
+	magentaFlash = calendarState{name: "MagentaFlash", primary: blink1.State{Red: 255, Blue: 255}, secondary: blink1.OffState, primaryFlash: time.Duration(125) * time.Millisecond, alternate: true}
 )
 
 // flags
@@ -238,7 +243,7 @@ func (blinker *blinkerState) setState(state blink1.State) error {
 func (blinker *blinkerState) patternRunner() {
 	currentState := black
 	failing := false
-	err := blinker.setState(currentState.blinkState)
+	err := blinker.setState(currentState.primary)
 	if err != nil {
 		failing = true
 	}
@@ -251,15 +256,20 @@ func (blinker *blinkerState) patternRunner() {
 			if newState != currentState || failing {
 				fmt.Fprintf(debugOut, "Changing from state %v to %v\n", currentState, newState)
 				currentState = newState
-				if newState.flashDuration > 0 {
+				if newState.primaryFlash > 0 || newState.secondaryFlash > 0 {
 					ticker = time.After(time.Millisecond)
 				} else {
 					if ticker != nil {
 						fmt.Fprintf(debugOut, "Killing timer\n")
 						ticker = nil
 					}
-					err = blinker.setState(newState.blinkState)
-					failing = (err != nil)
+					state1 := newState.primary
+					state1.LED = blink1.LED1
+					state2 := newState.secondary
+					state2.LED = blink1.LED2
+					err1 := blinker.setState(state1)
+					err2 := blinker.setState(state2)
+					failing = (err1 != nil) || (err2 != nil)
 				}
 			} else {
 				fmt.Fprintf(debugOut, "Retaining state %v unchanged\n", newState)
@@ -267,14 +277,29 @@ func (blinker *blinkerState) patternRunner() {
 
 		case <-ticker:
 			fmt.Fprintf(debugOut, "Timer fired\n")
-			state1 := currentState.blinkState
-			state2 := currentState.flashState
+			state1 := currentState.primary
+			state2 := currentState.secondary
 			if stateFlip {
+				if currentState.alternate {
 				state1, state2 = state2, state1
+				} else {
+					if currentState.primaryFlash > 0 {
+					    state1 = blink1.OffState
+					}
+					if currentState.secondaryFlash > 0 {
+					    state2 = blink1.OffState
+					}
+				}
 			}
-			state1.Duration = currentState.flashDuration
+			state1.Duration = currentState.primaryFlash
 			state1.FadeTime = state1.Duration
-			state2.Duration, state2.FadeTime = state1.Duration, state1.FadeTime
+			if currentState.alternate {
+					state2.Duration, state2.FadeTime = state1.Duration, state1.FadeTime
+
+			} else {
+			state2.Duration = currentState.secondaryFlash
+			state2.FadeTime = state2.Duration
+			}
 			// We set state1 on LED 1 and state2 on LED 2.  On an original (mk1) blink(1) state2 will be ignored.
 			state1.LED = blink1.LED1
 			state2.LED = blink1.LED2
@@ -385,7 +410,7 @@ func saveToken(file string, token *oauth2.Token) {
 
 // END GOOGLE CALENDAR API SAMPLE CODE
 
-// Event viewing methods
+// Event handling methods
 func eventHasAcceptableResponse(item *calendar.Event, responseState responseState) bool {
 	for _, attendee := range item.Attendees {
 		if attendee.Self {
@@ -403,22 +428,86 @@ func eventExcludedByPrefs(item string, userPrefs *userPrefs) bool {
 	}
 	for _, prefix := range userPrefs.excludePrefixes {
 		if strings.HasPrefix(item, prefix) {
-			fmt.Fprintf(debugOut, "Skipping event '%v' due to prefix match '%v'", item, prefix)
+			fmt.Fprintf(debugOut, "Skipping event '%v' due to prefix match '%v'\n", item, prefix)
 			return true
 		}
 	}
 	return false
 }
 
-func nextEvent(items *calendar.Events, userPrefs *userPrefs) *calendar.Event {
+func nextEvent(items *calendar.Events, userPrefs *userPrefs) []*calendar.Event {
+	var events []*calendar.Event
 	for _, i := range items.Items {
 		if i.Start.DateTime != "" &&
 			!eventExcludedByPrefs(i.Summary, userPrefs) &&
 			eventHasAcceptableResponse(i, userPrefs.responseState) {
-			return i
+			events = append(events, i)
+			if len(events) == 2 || (len(events) == 1 && !userPrefs.multiEvent) {
+				break
+			}
 		}
 	}
-	return nil
+	fmt.Fprintf(debugOut, "nextEvent returning %d events\n", len(events))
+	return events
+}
+
+func blinkStateForDelta(delta float64) calendarState {
+	blinkState := black
+	switch {
+	case delta < -1:
+		blinkState = blue
+	case delta < 0:
+		blinkState = blueFlash
+	case delta < 2:
+		blinkState = fastRedFlash
+	case delta < 5:
+		blinkState = redFlash
+	case delta < 10:
+		blinkState = red
+	case delta < 30:
+		blinkState = yellow
+	case delta < 60:
+		blinkState = green
+	}
+	return blinkState
+}
+
+func blinkStateForEvent(next []*calendar.Event) calendarState {
+	blinkState := black
+	for i, event := range next {
+		startTime, err := time.Parse(time.RFC3339, event.Start.DateTime)
+		if err == nil {
+			delta := -time.Since(startTime).Minutes()
+			if i == 0 {
+				blinkState = blinkStateForDelta(delta)
+			} else {
+				secondary := blinkStateForDelta(delta)
+				if secondary != black {
+					combined := calendarState{name: blinkState.name + "/" + secondary.name,
+						primary:        blinkState.primary,
+						secondary:      secondary.primary,
+						primaryFlash:   blinkState.primaryFlash,
+						secondaryFlash: secondary.primaryFlash,
+						alternate:      false}
+					blinkState = combined
+				}
+			}
+			fmt.Fprintf(debugOut, "Event %v, time %v, delta %v, state %v\n", event.Summary, startTime, delta, blinkState.name)
+		} else {
+			fmt.Println(err)
+			break
+		}
+	}
+	return blinkState
+}
+
+func fetchEvents(t string, srv *calendar.Service, userPrefs *userPrefs) ([]*calendar.Event, error) {
+	events, err := srv.Events.List(userPrefs.calendar).ShowDeleted(false).
+		SingleEvents(true).TimeMin(t).MaxResults(20).OrderBy("startTime").Do()
+	if err != nil {
+		return nil, err
+	}
+	return nextEvent(events, userPrefs), nil
 }
 
 // User preferences methods
@@ -493,8 +582,9 @@ func readUserPrefs() *userPrefs {
 		userPrefs.deviceFailureRetries = int(prefs.DeviceFailureRetries)
 	}
 	if prefs.ShowDots != "" {
-		userPrefs.showDots = (prefs.ShowDots == "false")
+		userPrefs.showDots = (prefs.ShowDots == "true")
 	}
+	userPrefs.multiEvent = (prefs.MultiEvent == "true")
 	fmt.Fprintf(debugOut, "User prefs: %v\n", userPrefs)
 	return userPrefs
 }
@@ -579,6 +669,9 @@ func printStartInfo(userPrefs *userPrefs) {
 	}
 	if len(timeString) > 0 {
 		fmt.Println(timeString)
+	}
+	if userPrefs.multiEvent {
+		fmt.Println("Multievent is active.")
 	}
 }
 
@@ -681,8 +774,8 @@ func main() {
 			}
 		}
 		t := now.Format(time.RFC3339)
-		events, err := srv.Events.List(userPrefs.calendar).ShowDeleted(false).
-			SingleEvents(true).TimeMin(t).MaxResults(10).OrderBy("startTime").Do()
+
+		next, err := fetchEvents(t, srv, userPrefs)
 		if err != nil {
 			// Leave the same color, set a flag. If we get more than a critical number of these,
 			// set the color to blinking magenta to tell the user we are in a failed state.
@@ -693,37 +786,9 @@ func main() {
 			fmt.Fprint(dotOut, ",")
 			sleep(time.Duration(userPrefs.pollInterval) * time.Second)
 			continue
-		} else {
-			failures = 0
 		}
+		blinkState := blinkStateForEvent(next)
 
-		next := nextEvent(events, userPrefs)
-		blinkState := black
-		if next != nil {
-			startTime, err := time.Parse(time.RFC3339, next.Start.DateTime)
-			if err == nil {
-				delta := -time.Since(startTime).Minutes()
-				switch {
-				case delta < -1:
-					blinkState = blue
-				case delta < 0:
-					blinkState = blueFlash
-				case delta < 2:
-					blinkState = fastRedFlash
-				case delta < 5:
-					blinkState = redFlash
-				case delta < 10:
-					blinkState = red
-				case delta < 30:
-					blinkState = yellow
-				case delta < 60:
-					blinkState = green
-				}
-				fmt.Fprintf(debugOut, "Event %v, time %v, delta %v, state %v\n", next.Summary, startTime, delta, blinkState.name)
-			} else {
-				fmt.Println(err)
-			}
-		}
 		blinkState.execute(blinkerState)
 		fmt.Fprint(dotOut, ".")
 		sleep(time.Duration(userPrefs.pollInterval) * time.Second)
