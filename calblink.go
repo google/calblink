@@ -284,24 +284,24 @@ func (blinker *blinkerState) patternRunner() {
 			state2 := currentState.secondary
 			if stateFlip {
 				if currentState.alternate {
-				state1, state2 = state2, state1
+					state1, state2 = state2, state1
 				} else {
 					if currentState.primaryFlash > 0 {
-					    state1 = blink1.OffState
+						state1 = blink1.OffState
 					}
 					if currentState.secondaryFlash > 0 {
-					    state2 = blink1.OffState
+						state2 = blink1.OffState
 					}
 				}
 			}
 			state1.Duration = currentState.primaryFlash
 			state1.FadeTime = state1.Duration
 			if currentState.alternate {
-					state2.Duration, state2.FadeTime = state1.Duration, state1.FadeTime
+				state2.Duration, state2.FadeTime = state1.Duration, state1.FadeTime
 
 			} else {
-			state2.Duration = currentState.secondaryFlash
-			state2.FadeTime = state2.Duration
+				state2.Duration = currentState.secondaryFlash
+				state2.FadeTime = state2.Duration
 			}
 			// We set state1 on LED 1 and state2 on LED 2.  On an original (mk1) blink(1) state2 will be ignored.
 			state1.LED = blink1.LED1
@@ -523,7 +523,7 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *userPrefs) ([]
 		seen := make(map[string]bool)
 		for _, event := range allEvents {
 			if seen[event.Id] {
-			fmt.Fprintf(debugOut, "Skipping duplicate event with ID %v\n", event.Id)
+				fmt.Fprintf(debugOut, "Skipping duplicate event with ID %v\n", event.Id)
 				continue
 			}
 			if event.Start.DateTime == "" {
