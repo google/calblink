@@ -52,7 +52,9 @@ To use calblink, you need the following:
     Quickstart](https://developers.google.com/google-apps/calendar/quickstart/go).
     Put the client\_secret.json file in your GOPATH directory.
 
-8.  Run the calblink program: go run calblink.go
+8.  Build the calblink program: go build calblink.go
+
+8.  Run the calblink program: ./calblink
 
 9.  It will request that you go to a URL and give it the token that you get
     back. You should access this URL from the account you want to read the
