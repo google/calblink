@@ -139,9 +139,8 @@ An example file:
 
 ## Known Issues
 
-*   If there are more than 20 events that are skipped (all-day events, excluded
-    events, and events with the wrong responseState) before the event that
-    should be shown, the event will not be processed.
+*   The current method that is used to get OAuth2 tokens is being deprecated, and needs
+    to be replaced.
 
 ## Troubleshooting
 
