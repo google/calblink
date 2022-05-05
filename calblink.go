@@ -831,6 +831,7 @@ func main() {
 			if failures > failureRetries {
 				magentaFlash.execute(blinkerState)
 			}
+			fmt.Fprintf(debugOut, "Fetch Error:\n%v\n", err)
 			fmt.Fprint(dotOut, ",")
 			sleep(time.Duration(userPrefs.pollInterval) * time.Second)
 			continue
