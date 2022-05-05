@@ -311,7 +311,12 @@ func (blinker *blinkerState) patternRunner() {
 			err2 := blinker.setState(state2)
 			failing = (err1 != nil) || (err2 != nil)
 			stateFlip = !stateFlip
-			ticker = time.After(state1.Duration)
+			nextTick := state1.Duration
+			if state1.Duration == 0 {
+				nextTick = state2.Duration
+			}
+			fmt.Fprintf(debugOut, "Next tick: %s\n", nextTick)
+			ticker = time.After(nextTick)
 		}
 	}
 }
