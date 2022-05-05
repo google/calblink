@@ -330,7 +330,7 @@ func signalHandler(blinker *blinkerState) {
 	for {
 		s := <-interrupt
 		if s == syscall.SIGQUIT {
-			fmt.Println("Turning on debug mode.\n")
+			fmt.Println("Turning on debug mode.")
 			debugOut = os.Stdout
 			continue
 		}
@@ -532,7 +532,7 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *userPrefs) ([]
 				continue
 			}
 			if event.Start.DateTime == "" {
-				fmt.Fprintf(debugOut, "Skipping all-day event %v: %v\n", event.Summary)
+				fmt.Fprintf(debugOut, "Skipping all-day event %v\n", event.Summary)
 				continue
 			}
 			filtered = append(filtered, event)
