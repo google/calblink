@@ -503,11 +503,14 @@ func blinkStateForEvent(next []*calendar.Event) calendarState {
 	return blinkState
 }
 
-func fetchEvents(t string, srv *calendar.Service, userPrefs *userPrefs) ([]*calendar.Event, error) {
+func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *userPrefs) ([]*calendar.Event, error) {
+	start := now.Format(time.RFC3339)
+	endTime := now.Add(2 * time.Hour)
+	end := endTime.Format(time.RFC3339)
 	var allEvents []*calendar.Event
 	for _, calendar := range userPrefs.calendars {
 		events, err := srv.Events.List(calendar).ShowDeleted(false).
-			SingleEvents(true).TimeMin(t).MaxResults(20).OrderBy("startTime").Do()
+			SingleEvents(true).TimeMin(start).TimeMax(end).OrderBy("startTime").Do()
 		if err != nil {
 			return nil, err
 		}
@@ -522,9 +525,8 @@ func fetchEvents(t string, srv *calendar.Service, userPrefs *userPrefs) ([]*cale
 			fmt.Fprintf(debugOut, "Skipping duplicate event with ID %v\n", event.Id)
 				continue
 			}
-			_, err := time.Parse(time.RFC3339, event.Start.DateTime)
-			if err != nil {
-				fmt.Fprintf(debugOut, "Parse failure with event %v at time %v: %v\n", event.Summary, event.Start, err)
+			if event.Start.DateTime == "" {
+				fmt.Fprintf(debugOut, "Skipping all-day event %v: %v\n", event.Summary)
 				continue
 			}
 			filtered = append(filtered, event)
@@ -821,9 +823,7 @@ func main() {
 				continue
 			}
 		}
-		t := now.Format(time.RFC3339)
-
-		next, err := fetchEvents(t, srv, userPrefs)
+		next, err := fetchEvents(now, srv, userPrefs)
 		if err != nil {
 			// Leave the same color, set a flag. If we get more than a critical number of these,
 			// set the color to blinking magenta to tell the user we are in a failed state.
@@ -834,6 +834,8 @@ func main() {
 			fmt.Fprint(dotOut, ",")
 			sleep(time.Duration(userPrefs.pollInterval) * time.Second)
 			continue
+		} else {
+			failures = 0
 		}
 		blinkState := blinkStateForEvent(next)
 
