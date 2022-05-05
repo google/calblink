@@ -38,6 +38,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/calendar/v3"
+	"google.golang.org/api/option"
 )
 
 // TODO - make color fade from green to yellow to red
@@ -772,9 +773,9 @@ func main() {
 	}
 	client := getClient(ctx, config)
 
-	srv, err := calendar.New(client)
+	srv, err := calendar.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
-		log.Fatalf("Unable to retrieve calendar Client %v", err)
+		log.Fatalf("Unable to retrieve Calendar client: %v", err)
 	}
 	// END GOOGLE CALENDAR API SAMPLE CODE
 
