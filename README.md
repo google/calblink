@@ -56,9 +56,9 @@ To use calblink, you need the following:
 
 8.  Run the calblink program: ./calblink
 
-9.  It will request that you go to a URL and give it the token that you get
-    back. You should access this URL from the account you want to read the
-    calendar of.
+9.  It will request that you go to a URL. On macOS, it will also request that you allow
+    the program to receive network requests; you should allow this.  You should access
+    this URL from the account you want to read the calendar of.
 
 10. That's it! It should just run now, and set your blink(1) to change color
     appropriately. To quit out of it, hit Ctrl-C in the window you ran it in.
