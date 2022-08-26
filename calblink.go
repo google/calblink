@@ -342,6 +342,44 @@ func signalHandler(blinker *blinkerState) {
 	}
 }
 
+// HTTP server code to listen to localhost to get an OAuth2 token.
+
+type handler struct {
+	rChan chan string
+	srv   *http.Server
+}
+
+func (h handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	fmt.Fprintln(debugOut, "Starting HTTP handler")
+	url := req.URL
+	if url.Path == "/" {
+		fmt.Fprintf(w, "Token received.  You can close this window.")
+		val := url.Query()
+		code := val["code"][0]
+		fmt.Fprintf(debugOut, "Received code %v\n", code)
+		go h.srv.Shutdown(context.Background())
+		h.rChan <- code
+	} else {
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func getTokenFromServer() string {
+	rChan := make(chan (string))
+	srv := &http.Server{
+		Addr: ":8844",
+	}
+	srv.Handler = handler{
+		rChan: rChan,
+		srv:   srv,
+	}
+	srv.ListenAndServe()
+
+	code := <-rChan
+
+	return code
+}
+
 // BEGIN GOOGLE CALENDAR API SAMPLE CODE
 
 // getClient uses a Context and Config to retrieve a Token
@@ -361,15 +399,13 @@ func getClient(ctx context.Context, config *oauth2.Config) *http.Client {
 
 // getTokenFromWeb uses Config to request a Token.
 // It returns the retrieved Token.
+// Modified from original Google code to use localhost redirect instead of OOB.
 func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
+	config.RedirectURL = "http://localhost:8844"
 	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-	fmt.Printf("Go to the following link in your browser then type the "+
-		"authorization code: \n%v\n", authURL)
+	fmt.Printf("Go to the following link in your browser: \n%v\n", authURL)
 
-	var code string
-	if _, err := fmt.Scan(&code); err != nil {
-		log.Fatalf("Unable to read authorization code %v", err)
-	}
+	code := getTokenFromServer()
 
 	tok, err := config.Exchange(oauth2.NoContext, code)
 	if err != nil {
