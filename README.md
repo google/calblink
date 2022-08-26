@@ -139,8 +139,7 @@ An example file:
 
 ## Known Issues
 
-*   The current method that is used to get OAuth2 tokens is being deprecated, and needs
-    to be replaced.
+*   Occasionally the shutdown is not as clean as it should be.
 
 ## Troubleshooting
 
