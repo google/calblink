@@ -78,7 +78,7 @@ options. conf.json includes several useful options you can set:
 *   excludes - a list of event titles which it will ignore. If you like blocking
     out time with "Make Time" or similar, you can add these names to the
     'excludes' array.
-*   excludePrefix - a list of event title prefixes which it will ignore.  This is useful
+*   excludePrefixes - a list of event title prefixes which it will ignore.  This is useful
     for blocks that start consistently but may not end consistently, such as "On call,
     secondary is PERSON".
 *   startTime - an HH:MM time (24-hour clock) which calblink won't turn on
