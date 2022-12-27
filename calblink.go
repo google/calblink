@@ -57,6 +57,7 @@ import (
 //   deviceFailureRetries: 10
 //   showDots: true
 //   multiEvent: true
+//   priorityFlashSide: 1
 //}
 // Notes on items:
 // Calendar is the calendar ID - the email address of the calendar.  For a person's calendar, that's their email.
@@ -121,6 +122,7 @@ type userPrefs struct {
 	deviceFailureRetries int
 	showDots             bool
 	multiEvent           bool
+	priorityFlashSide    int
 }
 
 // Struct used for decoding the JSON
@@ -137,6 +139,7 @@ type prefLayout struct {
 	DeviceFailureRetries int64
 	ShowDots             string
 	MultiEvent           string
+	PriorityFlashSide    int64
 }
 
 // calendarState is a display state for the calendar event.  It encapsulates both the colors to display and the flash duration.
@@ -160,7 +163,7 @@ var (
 	red          = calendarState{name: "Red", primary: blink1.State{Red: 255}, secondary: blink1.State{Red: 255}}
 	redFlash     = calendarState{name: "Red Flash", primary: blink1.State{Red: 255}, secondary: blink1.OffState, primaryFlash: time.Duration(500) * time.Millisecond, alternate: true}
 	fastRedFlash = calendarState{name: "Fast Red Flash", primary: blink1.State{Red: 255}, secondary: blink1.OffState, primaryFlash: time.Duration(125) * time.Millisecond, alternate: true}
-	blueFlash    = calendarState{name: "Red/Blue Flash", primary: blink1.State{Blue: 255}, secondary: blink1.State{Red: 255}, primaryFlash: time.Duration(500) * time.Millisecond, alternate: true}
+	blueFlash    = calendarState{name: "Red-Blue Flash", primary: blink1.State{Blue: 255}, secondary: blink1.State{Red: 255}, primaryFlash: time.Duration(500) * time.Millisecond, alternate: true}
 	blue         = calendarState{name: "Blue", primary: blink1.State{Blue: 255}, secondary: blink1.State{Blue: 255}}
 	magentaFlash = calendarState{name: "MagentaFlash", primary: blink1.State{Red: 255, Blue: 255}, secondary: blink1.OffState, primaryFlash: time.Duration(125) * time.Millisecond, alternate: true}
 )
@@ -516,7 +519,7 @@ func blinkStateForDelta(delta float64) calendarState {
 	return blinkState
 }
 
-func blinkStateForEvent(next []*calendar.Event) calendarState {
+func blinkStateForEvent(next []*calendar.Event, priority int) calendarState {
 	blinkState := black
 	for i, event := range next {
 		startTime, err := time.Parse(time.RFC3339, event.Start.DateTime)
@@ -535,8 +538,21 @@ func blinkStateForEvent(next []*calendar.Event) calendarState {
 						alternate:      false}
 					blinkState = combined
 				}
+				if (priority == 1 && blinkState.primaryFlash == 0 && blinkState.secondaryFlash > 0) ||
+					(priority == 2 && blinkState.primaryFlash > 0 && blinkState.secondaryFlash == 0) {
+					fmt.Fprintf(debugOut, "Swapping")
+					swapped := calendarState{name: blinkState.name + " swapped",
+						primary:        blinkState.secondary,
+						secondary:      blinkState.primary,
+						primaryFlash:   blinkState.secondaryFlash,
+						secondaryFlash: blinkState.primaryFlash,
+						alternate:      false}
+					blinkState = swapped
+				}
 			}
 			fmt.Fprintf(debugOut, "Event %v, time %v, delta %v, state %v\n", event.Summary, startTime, delta, blinkState.name)
+			// Set priority.  If priority is set, and the other light is flashing but the priority one isn't, swap them.
+
 		} else {
 			fmt.Println(err)
 			break
@@ -670,6 +686,9 @@ func readUserPrefs() *userPrefs {
 		userPrefs.showDots = (prefs.ShowDots == "true")
 	}
 	userPrefs.multiEvent = (prefs.MultiEvent == "true")
+	if prefs.PriorityFlashSide != 0 {
+		userPrefs.priorityFlashSide = int(prefs.PriorityFlashSide)
+	}
 	fmt.Fprintf(debugOut, "User prefs: %v\n", userPrefs)
 	return userPrefs
 }
@@ -881,7 +900,7 @@ func main() {
 		} else {
 			failures = 0
 		}
-		blinkState := blinkStateForEvent(next)
+		blinkState := blinkStateForEvent(next, userPrefs.priorityFlashSide)
 
 		blinkState.execute(blinkerState)
 		fmt.Fprint(dotOut, ".")

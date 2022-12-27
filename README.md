@@ -119,6 +119,9 @@ options. conf.json includes several useful options you can set:
     *    X - device failure.
 *   multiEvent - if true, calblink will check the next two events, and if they are
     both in the time frame to show, it will show both.
+*   priorityFlashSide - if 0 (the default), which side of the blink(1) is flashing
+    will not be adjusted.  If set to 1, then flashing will be prioritized on LED 1;
+	if 2, flashing will be prioritized on LED2.  Any other values are undefined.
 
 An example file:
 
@@ -130,8 +133,9 @@ An example file:
         "endTime": "18:00",
         "pollInterval": 60,
         "calendars": ["primary", "username@example.com"],
-        "responseState": "accepted"
-        "multiEvent": "true"
+        "responseState": "accepted",
+        "multiEvent": "true",
+        "priorityFlashSide": 1
     }
 ```
 
