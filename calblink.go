@@ -610,6 +610,7 @@ func readUserPrefs() *userPrefs {
 	}
 	prefs := prefLayout{}
 	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
 	err = decoder.Decode(&prefs)
 	fmt.Fprintf(debugOut, "Decoded prefs: %v\n", prefs)
 	if err != nil {
