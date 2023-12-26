@@ -122,6 +122,15 @@ options. conf.json includes several useful options you can set:
 *   priorityFlashSide - if 0 (the default), which side of the blink(1) is flashing
     will not be adjusted.  If set to 1, then flashing will be prioritized on LED 1;
 	if 2, flashing will be prioritized on LED2.  Any other values are undefined.
+*   workingLocations - a list of working locations to filter results by.  If all
+    calendars with working locations set have locations that are not in the list of
+    locations, no events will be shown.  Handling of multiple calendars with working
+    locations set may be suboptimal - if one calendar is set to homeOffice and another
+    is set to an office location, both will be valid for all events on either calendar.
+    Values should be in the following formats:
+    *   'home' to indicate WFH
+    *   'office:NAME' to match an office location called NAME.
+    *   'custom:NAME' to match a custom location called NAME.
 
 An example file:
 
@@ -135,7 +144,8 @@ An example file:
         "calendars": ["primary", "username@example.com"],
         "responseState": "accepted",
         "multiEvent": "true",
-        "priorityFlashSide": 1
+        "priorityFlashSide": 1,
+        "workingLocations": ["home"]
     }
 ```
 
