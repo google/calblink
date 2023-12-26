@@ -108,6 +108,57 @@ func (state responseState) isValidState() bool {
 	return false
 }
 
+// workSiteType is an enumerated list of 
+type workSiteType int
+const (
+	workSiteHome workSiteType = iota
+	workSiteOffice
+	workSiteCustom
+)
+
+func makeWorkSiteType(location string) workSiteType {
+	switch location {
+	case "officeLocation":
+	case "office":
+		return workSiteOffice
+	case "customLocation":
+	case "custom":
+		return workSiteCustom
+	}
+	return workSiteHome
+}
+
+func (siteType workSiteType) toString() string {
+	switch siteType {
+	case workSiteHome:
+		return "Home"
+	case workSiteOffice:
+		return "Office"
+	case workSiteCustom:
+		return "Custom"
+	}
+	return ""
+}
+
+// workSite is a struct that holds a working location.  If name is unset, should match
+// all sites of the given type.
+type workSite struct {
+	siteType workSiteType
+	name string
+}
+
+// Converts a string into a workSite structure.  Returns an unset structure if the string is invalid.
+func makeWorkSite(location string) workSite {
+	split := strings.SplitN(location, ":", 2)
+	siteType := makeWorkSiteType(split[0])
+	name := ""
+	if len(split) > 1 {
+		name = split[1]
+	}
+	fmt.Fprintf(debugOut, "Work Site: type %v, name %v", siteType, name)
+	return workSite{siteType: siteType, name: name}
+}
+
 // userPrefs is a struct that manages the user preferences as set by the config file and command line.
 
 type userPrefs struct {
@@ -123,6 +174,7 @@ type userPrefs struct {
 	showDots             bool
 	multiEvent           bool
 	priorityFlashSide    int
+	workingLocations     []workSite
 }
 
 // Struct used for decoding the JSON
@@ -140,6 +192,7 @@ type prefLayout struct {
 	ShowDots             string
 	MultiEvent           string
 	PriorityFlashSide    int64
+	WorkingLocations     []string
 }
 
 // calendarState is a display state for the calendar event.  It encapsulates both the colors to display and the flash duration.
@@ -482,8 +535,30 @@ func eventExcludedByPrefs(item string, userPrefs *userPrefs) bool {
 	return false
 }
 
-func nextEvent(items []*calendar.Event, userPrefs *userPrefs) []*calendar.Event {
+func nextEvent(items []*calendar.Event, locations []workSite, userPrefs *userPrefs) []*calendar.Event {
 	var events []*calendar.Event
+
+	if len(userPrefs.workingLocations) > 0 {
+		match := false
+		locationSet := make(map[workSite]bool)
+		for _, location := range locations {
+			locationSet[location] = true
+		}
+	
+		for _, prefLocation := range userPrefs.workingLocations {
+			if locationSet[prefLocation] {
+				fmt.Fprintf(debugOut, "Found matching location: %v\n", prefLocation)
+				match = true
+				break
+			}
+		}
+		
+		if !match {
+			fmt.Fprintf(debugOut, "Skipping all events due to no matching locations in %v\n", locations)
+			return events
+		}
+	}
+
 	for _, i := range items {
 		if i.Start.DateTime != "" &&
 			!eventExcludedByPrefs(i.Summary, userPrefs) &&
@@ -566,11 +641,42 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *userPrefs) ([]
 	endTime := now.Add(2 * time.Hour)
 	end := endTime.Format(time.RFC3339)
 	var allEvents []*calendar.Event
+	locations := make([]workSite, 0)
 	for _, calendar := range userPrefs.calendars {
+		var locationCreated time.Time
+		var location workSite
 		events, err := srv.Events.List(calendar).ShowDeleted(false).
-			SingleEvents(true).TimeMin(start).TimeMax(end).OrderBy("startTime").Do()
+			SingleEvents(true).TimeMin(start).TimeMax(end).OrderBy("startTime").
+			EventTypes("default", "focusTime", "outOfOffice", "workingLocation").Do()
 		if err != nil {
 			return nil, err
+		}
+		for _, event := range events.Items {
+			if event.EventType == "workingLocation" {
+				// There's a bug in the Calendar API where a recurring location that is
+				// overridden for the day still shows up in the list of events.  The most
+				// recently created one is the one we want.
+				thisCreated, err := time.Parse(time.RFC3339, event.Created)
+				if err != nil || thisCreated.Before(locationCreated) {
+					continue
+				}
+				locationProperties := event.WorkingLocationProperties
+				locationType := makeWorkSiteType(locationProperties.Type)
+				locationString := ""
+				switch locationType {
+				case workSiteOffice:
+					locationString = locationProperties.OfficeLocation.Label
+				case workSiteCustom:
+					locationString = locationProperties.CustomLocation.Label
+				}
+				location = workSite{siteType: locationType, name: locationString}
+				locationCreated = thisCreated
+				fmt.Fprintf(debugOut, "Location detected: calendar %v, location %v\n", calendar, location)
+			}
+		}
+		if !locationCreated.IsZero() {
+			fmt.Fprintf(debugOut, "Adding final location %v\n", location)
+			locations = append(locations, location)
 		}
 		allEvents = append(allEvents, events.Items...)
 	}
@@ -604,7 +710,7 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *userPrefs) ([]
 		})
 		allEvents = filtered
 	}
-	return nextEvent(allEvents, userPrefs), nil
+	return nextEvent(allEvents, locations, userPrefs), nil
 }
 
 // User preferences methods
@@ -689,6 +795,9 @@ func readUserPrefs() *userPrefs {
 	if prefs.PriorityFlashSide != 0 {
 		userPrefs.priorityFlashSide = int(prefs.PriorityFlashSide)
 	}
+	for _, location := range prefs.WorkingLocations {
+		userPrefs.workingLocations = append(userPrefs.workingLocations, makeWorkSite(location))
+	}
 	fmt.Fprintf(debugOut, "User prefs: %v\n", userPrefs)
 	return userPrefs
 }
@@ -741,6 +850,16 @@ func printStartInfo(userPrefs *userPrefs) {
 		fmt.Println("Only accepted events shown.")
 	case responseStateNotRejected:
 		fmt.Println("Rejected events not shown.")
+	}
+	if len(userPrefs.workingLocations) > 0 {
+		fmt.Println("Working Locations:")
+		for _, item := range userPrefs.workingLocations {
+			if item.siteType == workSiteHome {
+				fmt.Printf("   Home\n")
+			} else {
+			  	fmt.Printf("   %v: %v\n", item.siteType.toString(), item.name)
+			}
+		}
 	}
 	if len(userPrefs.excludes) > 0 {
 		fmt.Println("Excluded events:")
