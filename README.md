@@ -39,9 +39,7 @@ To use calblink, you need the following:
 2.  Bring up a command-line window, and create the directory you want to run
     this in.
 3.  Put calblink.go into the directory you just created.
-4.  Install libusb-compat, if needed. If you needed to, and used Homebrew as instructed
-    above, set INCLUDE\_PATH and LIBRARY\_PATH to point to the 'include' and
-    'lib' directories under the Homebrew directory. 
+4.  Install libusb-compat, if needed.
 5.  Create your module file:
     ```
     go mod init calblink
@@ -52,9 +50,18 @@ To use calblink, you need the following:
     Quickstart](https://developers.google.com/google-apps/calendar/quickstart/go).
     Put the client\_secret.json file in your GOPATH directory.
 
-8.  Build the calblink program: go build calblink.go
+8.  Build the calblink program as appropriate for your environment:
 
-8.  Run the calblink program: ./calblink
+    * For a Linux environment or another that doesn't use Homebrew:
+            <go build calblink.go>
+    * For a default Homebrew install on an Intel-based Mac:
+            <CGO_LDFLAGS="-L/usr/local/lib" CGO_CFLAGS="-I/usr/local/include" go build calblink.go>
+ 	* For a default Homebrew install on an ARM-based Mac:
+			<CGO_LDFLAGS="-L/opt/homebrew/lib" CGO_CFLAGS="-I/opt/homebrew/include" go build calblink.go>
+	* For a customized Homebrew install, modify the above to match your configuration.
+        
+8.  Run the calblink program:
+        <./calblink>
 
 9.  It will request that you go to a URL. On macOS, it will also request that you allow
     the program to receive network requests; you should allow this.  You should access
