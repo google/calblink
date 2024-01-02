@@ -118,11 +118,9 @@ const (
 
 func makeWorkSiteType(location string) workSiteType {
 	switch location {
-	case "officeLocation":
-	case "office":
+	case "officeLocation", "office":
 		return workSiteOffice
-	case "customLocation":
-	case "custom":
+	case "customLocation", "custom":
 		return workSiteCustom
 	}
 	return workSiteHome
