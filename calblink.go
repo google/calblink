@@ -944,6 +944,14 @@ func main() {
 	if *debugFlag {
 		debugOut = os.Stdout
 	}
+	clientSecretPath := "/path/to/client_secret.json"
+	credentials, err := loadClientCredentials(clientSecretPath)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	// Use the credentials to authenticate with the Google Calendar API
 
 	userPrefs := readUserPrefs()
 
@@ -1056,13 +1064,6 @@ func main() {
 		fmt.Fprint(dotOut, ".")
 		sleep(time.Duration(userPrefs.pollInterval) * time.Second)
 	}
-	clientSecretPath := "/path/to/client_secret.json"
-	credentials, err := loadClientCredentials(clientSecretPath)
-	if err != nil {
-		fmt.Println("Error:", err)
-		return
-	}
-
-	// Use the credentials to authenticate with the Google Calendar API
+	
 }
 }
