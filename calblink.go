@@ -73,6 +73,39 @@ import (
 // MultiEvent indicates whether to show two events if there are multiple events in the time range.
 
 // responseState is an enumerated list of event response states, used to control which events will activate the blink(1).
+
+type ClientCredentials struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+}
+
+func loadClientCredentials(clientSecretPath string) (*ClientCredentials, error) {
+	// Check if the file exists and is readable
+	info, err := os.Stat(clientSecretPath)
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("client secret file not found: %s", clientSecretPath)
+	}
+
+	// Check if the file has secure permissions (readable only by owner)
+	if info.Mode().Perm() != 0400 {
+		return nil, fmt.Errorf("insecure permissions for client secret file: %s", clientSecretPath)
+	}
+
+	// Read the contents of the file
+	content, err := ioutil.ReadFile(clientSecretPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read client secret file: %v", err)
+	}
+
+	// Parse the JSON data
+	var credentials ClientCredentials
+	if err := json.Unmarshal(content, &credentials); err != nil {
+		return nil, fmt.Errorf("failed to parse client secret file: %v", err)
+	}
+
+	return &credentials, nil
+}
+
 type responseState string
 
 const (
@@ -1023,4 +1056,13 @@ func main() {
 		fmt.Fprint(dotOut, ".")
 		sleep(time.Duration(userPrefs.pollInterval) * time.Second)
 	}
+	clientSecretPath := "/path/to/client_secret.json"
+	credentials, err := loadClientCredentials(clientSecretPath)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	// Use the credentials to authenticate with the Google Calendar API
+}
 }
