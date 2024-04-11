@@ -944,7 +944,7 @@ func main() {
 	if *debugFlag {
 		debugOut = os.Stdout
 	}
-	clientSecretPath := "/path/to/client_secret.json"
+	clientSecretPath := clientSecretFlag
 	credentials, err := loadClientCredentials(clientSecretPath)
 	if err != nil {
 		fmt.Println("Error:", err)
@@ -1065,5 +1065,5 @@ func main() {
 		sleep(time.Duration(userPrefs.pollInterval) * time.Second)
 	}
 	
-}
+
 }
