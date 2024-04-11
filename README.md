@@ -161,6 +161,27 @@ An example file:
 
 (Yes, the curly braces are required.  Sorry.  It's a JSON dictionary.)
 
+
+
+
+### New Requirements
+In addition to the existing setup, please ensure the following requirements are met:
+
+1. **File Permission Check**: The client secret file (`client_secret.json`) must have restricted permissions to ensure sensitive credentials are protected.
+
+### Why This Change is Necessary
+Ensuring that sensitive files, such as client secret files containing authentication credentials, are accessible only by authorized users is crucial for preventing unauthorized access and potential security breaches. By implementing a file permission check, we mitigate the risk of exposing sensitive information to unauthorized users or processes.
+
+### Configuration Notes:
+To comply with the new security measure and meet the new requirements, please follow these configuration steps:
+
+1. **File Permission Requirement**: 
+    - Ensure that the client secret file (`client_secret.json`) is only readable by the owner. This can be achieved by setting appropriate file permissions using the `chmod` command. For example:
+      ```
+      chmod 600 client_secret.json
+      ```
+    This command restricts read and write permissions to the owner only, ensuring that sensitive credentials are protected from unauthorized access.
+
 ## Known Issues
 
 *   Occasionally the shutdown is not as clean as it should be.
