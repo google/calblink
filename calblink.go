@@ -74,12 +74,7 @@ import (
 
 // responseState is an enumerated list of event response states, used to control which events will activate the blink(1).
 
-type ClientCredentials struct {
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-}
-
-func loadClientCredentials(clientSecretPath string) (*ClientCredentials, error) {
+func loadClientCredentials(clientSecretPath string) ([]byte, error) {
 	// Check if the file exists and is readable
 	info, err := os.Stat(clientSecretPath)
 	if os.IsNotExist(err) {
@@ -97,14 +92,9 @@ func loadClientCredentials(clientSecretPath string) (*ClientCredentials, error) 
 		return nil, fmt.Errorf("failed to read client secret file: %v", err)
 	}
 
-	// Parse the JSON data
-	var credentials ClientCredentials
-	if err := json.Unmarshal(content, &credentials); err != nil {
-		return nil, fmt.Errorf("failed to parse client secret file: %v", err)
-	}
-
-	return &credentials, nil
+	return content, nil
 }
+
 
 type responseState string
 
@@ -945,7 +935,7 @@ func main() {
 		debugOut = os.Stdout
 	}
 	clientSecretPath := clientSecretFlag
-	credentials, err := loadClientCredentials(clientSecretPath)
+	b, err := ioutil.ReadFile(*clientSecretFlag)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
