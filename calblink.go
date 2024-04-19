@@ -935,7 +935,7 @@ func main() {
 		debugOut = os.Stdout
 	}
 	clientSecretPath := clientSecretFlag
-	b, err := ioutil.ReadFile(*clientSecretFlag)
+	credentials, err := loadClientCredentials(clientSecretPath)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -971,7 +971,7 @@ func main() {
 	// BEGIN GOOGLE CALENDAR API SAMPLE CODE
 	ctx := context.Background()
 
-	b, err := ioutil.ReadFile(*clientSecretFlag)
+	b, err := loadClientCredentials(*clientSecretFlag)
 	if err != nil {
 		log.Fatalf("Unable to read client secret file: %v", err)
 	}
