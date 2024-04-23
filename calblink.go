@@ -73,6 +73,29 @@ import (
 // MultiEvent indicates whether to show two events if there are multiple events in the time range.
 
 // responseState is an enumerated list of event response states, used to control which events will activate the blink(1).
+
+func loadClientCredentials(clientSecretPath string) ([]byte, error) {
+	// Check if the file exists and is readable
+	info, err := os.Stat(clientSecretPath)
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("client secret file not found: %s", clientSecretPath)
+	}
+
+	// Check if the file has secure permissions (readable only by owner)
+	if info.Mode().Perm() != 0400 {
+		return nil, fmt.Errorf("insecure permissions for client secret file: %s", clientSecretPath)
+	}
+
+	// Read the contents of the file
+	content, err := ioutil.ReadFile(clientSecretPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read client secret file: %v", err)
+	}
+
+	return content, nil
+}
+
+
 type responseState string
 
 const (
@@ -911,7 +934,7 @@ func main() {
 	if *debugFlag {
 		debugOut = os.Stdout
 	}
-
+	
 	userPrefs := readUserPrefs()
 
 	// Overrides from command-line
@@ -940,7 +963,7 @@ func main() {
 	// BEGIN GOOGLE CALENDAR API SAMPLE CODE
 	ctx := context.Background()
 
-	b, err := ioutil.ReadFile(*clientSecretFlag)
+	b, err := loadClientCredentials(*clientSecretFlag)
 	if err != nil {
 		log.Fatalf("Unable to read client secret file: %v", err)
 	}
@@ -1023,4 +1046,6 @@ func main() {
 		fmt.Fprint(dotOut, ".")
 		sleep(time.Duration(userPrefs.pollInterval) * time.Second)
 	}
+	
+
 }
