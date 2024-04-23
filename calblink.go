@@ -934,15 +934,7 @@ func main() {
 	if *debugFlag {
 		debugOut = os.Stdout
 	}
-	clientSecretPath := clientSecretFlag
-	credentials, err := loadClientCredentials(clientSecretPath)
-	if err != nil {
-		fmt.Println("Error:", err)
-		return
-	}
-
-	// Use the credentials to authenticate with the Google Calendar API
-
+	
 	userPrefs := readUserPrefs()
 
 	// Overrides from command-line
