@@ -19,7 +19,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -87,14 +86,13 @@ func loadClientCredentials(clientSecretPath string) ([]byte, error) {
 	}
 
 	// Read the contents of the file
-	content, err := ioutil.ReadFile(clientSecretPath)
+	content, err := os.ReadFile(clientSecretPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read client secret file: %v", err)
 	}
 
 	return content, nil
 }
-
 
 type responseState string
 
@@ -131,8 +129,9 @@ func (state responseState) isValidState() bool {
 	return false
 }
 
-// workSiteType is an enumerated list of 
+// workSiteType is an enumerated list of
 type workSiteType int
+
 const (
 	workSiteHome workSiteType = iota
 	workSiteOffice
@@ -165,7 +164,7 @@ func (siteType workSiteType) toString() string {
 // all sites of the given type.
 type workSite struct {
 	siteType workSiteType
-	name string
+	name     string
 }
 
 // Converts a string into a workSite structure.  Returns an unset structure if the string is invalid.
@@ -252,8 +251,8 @@ var responseStateFlag = flag.String("response_state", "notRejected", "Which even
 var deviceFailureRetriesFlag = flag.Int("device_failure_retries", 10, "Number of times to retry initializing the device before quitting the program")
 var showDotsFlag = flag.Bool("show_dots", true, "Whether to show progress dots after every cycle of checking the calendar")
 
-var debugOut io.Writer = ioutil.Discard
-var dotOut io.Writer = ioutil.Discard
+var debugOut io.Writer = io.Discard
+var dotOut io.Writer = io.Discard
 
 const failureRetries = 3
 
@@ -565,7 +564,7 @@ func nextEvent(items []*calendar.Event, locations []workSite, userPrefs *userPre
 		for _, location := range locations {
 			locationSet[location] = true
 		}
-	
+
 		for _, prefLocation := range userPrefs.workingLocations {
 			if locationSet[prefLocation] {
 				fmt.Fprintf(debugOut, "Found matching location: %v\n", prefLocation)
@@ -573,7 +572,7 @@ func nextEvent(items []*calendar.Event, locations []workSite, userPrefs *userPre
 				break
 			}
 		}
-		
+
 		if !match {
 			fmt.Fprintf(debugOut, "Skipping all events due to no matching locations in %v\n", locations)
 			return events
@@ -878,7 +877,7 @@ func printStartInfo(userPrefs *userPrefs) {
 			if item.siteType == workSiteHome {
 				fmt.Printf("   Home\n")
 			} else {
-			  	fmt.Printf("   %v: %v\n", item.siteType.toString(), item.name)
+				fmt.Printf("   %v: %v\n", item.siteType.toString(), item.name)
 			}
 		}
 	}
@@ -934,7 +933,7 @@ func main() {
 	if *debugFlag {
 		debugOut = os.Stdout
 	}
-	
+
 	userPrefs := readUserPrefs()
 
 	// Overrides from command-line
@@ -1046,6 +1045,5 @@ func main() {
 		fmt.Fprint(dotOut, ".")
 		sleep(time.Duration(userPrefs.pollInterval) * time.Second)
 	}
-	
 
 }

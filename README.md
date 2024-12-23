@@ -45,7 +45,11 @@ To use calblink, you need the following:
     go mod init calblink
     go mod tidy
     ```
-    
+6. If you already have a `go.mod` and `go.sum`, you may need to update it before compiling.
+    ```
+    go get -u
+    go mod tidy
+    ```
 7.  Get an OAuth 2 ID as described in step 1 of the [Google Calendar
     Quickstart](https://developers.google.com/google-apps/calendar/quickstart/go).
     Put the client\_secret.json file in your GOPATH directory.
@@ -57,25 +61,25 @@ To use calblink, you need the following:
     * For a default Homebrew install on an Intel-based Mac:
     
             CGO_LDFLAGS="-L/usr/local/lib" CGO_CFLAGS="-I/usr/local/include" go build calblink.go
- 	* For a default Homebrew install on an ARM-based Mac:
- 	
-			CGO_LDFLAGS="-L/opt/homebrew/lib" CGO_CFLAGS="-I/opt/homebrew/include" go build calblink.go
-	* For a customized Homebrew install, modify the above to match your configuration.
-        
-8.  Run the calblink program:
+    * For a default Homebrew install on an ARM-based Mac:
+    
+            CGO_LDFLAGS="-L/opt/homebrew/lib" CGO_CFLAGS="-I/opt/homebrew/include" go build calblink.go
+    * For a customized Homebrew install, modify the above to match your configuration.
+
+9.  Run the calblink program:
 
         ./calblink
 
-9.  It will request that you go to a URL. On macOS, it will also request that you allow
+10. It will request that you go to a URL. On macOS, it will also request that you allow
     the program to receive network requests; you should allow this.  You should access
     this URL from the account you want to read the calendar of.
 
-10. That's it! It should just run now, and set your blink(1) to change color
+11. That's it! It should just run now, and set your blink(1) to change color
     appropriately. To quit out of it, hit Ctrl-C in the window you ran it in.
     (It will turn the blink(1) off automatically.) It will output a . into the
     terminal window every time it checks the server and sets the LED.
 
-11. Optionally, set up a config file, as below.
+12. Optionally, set up a config file, as below.
 
 ## What are the configuration options?
 
@@ -160,9 +164,6 @@ An example file:
 ```
 
 (Yes, the curly braces are required.  Sorry.  It's a JSON dictionary.)
-
-
-
 
 ### New Requirements
 In addition to the existing setup, please ensure the following requirements are met:
