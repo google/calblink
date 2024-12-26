@@ -15,231 +15,13 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
-	"net/http"
-	"net/url"
 	"os"
-	"os/signal"
-	"os/user"
-	"path/filepath"
-	"sort"
-	"strings"
-	"syscall"
 	"time"
-
-	blink1 "github.com/kazrakcom/go-blink1"
-
-	"golang.org/x/net/context"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
-	"google.golang.org/api/calendar/v3"
-	"google.golang.org/api/option"
-)
-
-// TODO - make color fade from green to yellow to red
-// TODO - add Clock type to manage time-of-day where we currently use Time and hacks to set it to the current day
-// Configuration file:
-// JSON file with the following structure:
-// {
-//   excludes: [ "event", "names", "to", "ignore"],
-//   excludePrefixes: [ "prefixes", "to", "ignore"],
-//   startTime: "hh:mm (24 hr format) to start blinking at every day",
-//   endTime: "hh:mm (24 hr format) to stop blinking at every day",
-//   skipDays: [ "weekdays", "to", "skip"],
-//   pollInterval: 30
-//   calendar: "calendar"
-//   responseState: "all"
-//   deviceFailureRetries: 10
-//   showDots: true
-//   multiEvent: true
-//   priorityFlashSide: 1
-//}
-// Notes on items:
-// Calendar is the calendar ID - the email address of the calendar.  For a person's calendar, that's their email.
-//   For a secondary calendar, it's the base64 string @group.calendar.google.com on the calendar details page. "primary"
-//   is a magic string that means "the logged-in user's primary calendar".
-// SkipDays may be localized.
-// Excludes is exact string matches only.
-// ExcludePrefixes will exclude all events starting with the given prefix.
-// ResponseState can be one of: "all" (all events whatever their response status), "accepted" (only accepted events),
-// "notRejected" (any events that are not rejected).  Default is notRejected.
-// DeviceFailureRetries is the number of consecutive failures to initialize the device before the program quits. Default is 10.
-// ShowDots indicates whether to show dots and similar marks to indicate that the program has completed an update cycle.
-// MultiEvent indicates whether to show two events if there are multiple events in the time range.
-
-// responseState is an enumerated list of event response states, used to control which events will activate the blink(1).
-
-func loadClientCredentials(clientSecretPath string) ([]byte, error) {
-	// Check if the file exists and is readable
-	info, err := os.Stat(clientSecretPath)
-	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("client secret file not found: %s", clientSecretPath)
-	}
-
-	// Check if the file has secure permissions (readable only by owner)
-	if info.Mode().Perm() != 0400 {
-		return nil, fmt.Errorf("insecure permissions for client secret file: %s", clientSecretPath)
-	}
-
-	// Read the contents of the file
-	content, err := ioutil.ReadFile(clientSecretPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read client secret file: %v", err)
-	}
-
-	return content, nil
-}
-
-
-type responseState string
-
-const (
-	responseStateAll         = responseState("all")
-	responseStateAccepted    = responseState("accepted")
-	responseStateNotRejected = responseState("notRejected")
-)
-
-// checkStatus returns true if the given event status is one that should activate the blink(1) in the given responseState.
-func (state responseState) checkStatus(status string) bool {
-	switch state {
-	case responseStateAll:
-		return true
-
-	case responseStateAccepted:
-		return (status == "accepted")
-
-	case responseStateNotRejected:
-		return (status != "declined")
-	}
-	return false
-}
-
-func (state responseState) isValidState() bool {
-	switch state {
-	case responseStateAll:
-		return true
-	case responseStateAccepted:
-		return true
-	case responseStateNotRejected:
-		return true
-	}
-	return false
-}
-
-// workSiteType is an enumerated list of 
-type workSiteType int
-const (
-	workSiteHome workSiteType = iota
-	workSiteOffice
-	workSiteCustom
-)
-
-func makeWorkSiteType(location string) workSiteType {
-	switch location {
-	case "officeLocation", "office":
-		return workSiteOffice
-	case "customLocation", "custom":
-		return workSiteCustom
-	}
-	return workSiteHome
-}
-
-func (siteType workSiteType) toString() string {
-	switch siteType {
-	case workSiteHome:
-		return "Home"
-	case workSiteOffice:
-		return "Office"
-	case workSiteCustom:
-		return "Custom"
-	}
-	return ""
-}
-
-// workSite is a struct that holds a working location.  If name is unset, should match
-// all sites of the given type.
-type workSite struct {
-	siteType workSiteType
-	name string
-}
-
-// Converts a string into a workSite structure.  Returns an unset structure if the string is invalid.
-func makeWorkSite(location string) workSite {
-	split := strings.SplitN(location, ":", 2)
-	siteType := makeWorkSiteType(split[0])
-	name := ""
-	if len(split) > 1 {
-		name = split[1]
-	}
-	fmt.Fprintf(debugOut, "Work Site: type %v, name %v", siteType, name)
-	return workSite{siteType: siteType, name: name}
-}
-
-// userPrefs is a struct that manages the user preferences as set by the config file and command line.
-
-type userPrefs struct {
-	excludes             map[string]bool
-	excludePrefixes      []string
-	startTime            *time.Time
-	endTime              *time.Time
-	skipDays             [7]bool
-	pollInterval         int
-	calendars            []string
-	responseState        responseState
-	deviceFailureRetries int
-	showDots             bool
-	multiEvent           bool
-	priorityFlashSide    int
-	workingLocations     []workSite
-}
-
-// Struct used for decoding the JSON
-type prefLayout struct {
-	Excludes             []string
-	ExcludePrefixes      []string
-	StartTime            string
-	EndTime              string
-	SkipDays             []string
-	PollInterval         int64
-	Calendar             string
-	Calendars            []string
-	ResponseState        string
-	DeviceFailureRetries int64
-	ShowDots             string
-	MultiEvent           string
-	PriorityFlashSide    int64
-	WorkingLocations     []string
-}
-
-// calendarState is a display state for the calendar event.  It encapsulates both the colors to display and the flash duration.
-type calendarState struct {
-	name           string
-	primary        blink1.State
-	secondary      blink1.State
-	primaryFlash   time.Duration
-	secondaryFlash time.Duration
-	alternate      bool
-}
-
-func (state calendarState) execute(blinker *blinkerState) {
-	blinker.newState <- state
-}
-
-var (
-	black        = calendarState{name: "Black", primary: blink1.OffState}
-	green        = calendarState{name: "Green", primary: blink1.State{Green: 255}, secondary: blink1.State{Green: 255}}
-	yellow       = calendarState{name: "Yellow", primary: blink1.State{Red: 255, Green: 160}, secondary: blink1.State{Red: 255, Green: 160}}
-	red          = calendarState{name: "Red", primary: blink1.State{Red: 255}, secondary: blink1.State{Red: 255}}
-	redFlash     = calendarState{name: "Red Flash", primary: blink1.State{Red: 255}, secondary: blink1.OffState, primaryFlash: time.Duration(500) * time.Millisecond, alternate: true}
-	fastRedFlash = calendarState{name: "Fast Red Flash", primary: blink1.State{Red: 255}, secondary: blink1.OffState, primaryFlash: time.Duration(125) * time.Millisecond, alternate: true}
-	blueFlash    = calendarState{name: "Red-Blue Flash", primary: blink1.State{Blue: 255}, secondary: blink1.State{Red: 255}, primaryFlash: time.Duration(500) * time.Millisecond, alternate: true}
-	blue         = calendarState{name: "Blue", primary: blink1.State{Blue: 255}, secondary: blink1.State{Blue: 255}}
-	magentaFlash = calendarState{name: "MagentaFlash", primary: blink1.State{Red: 255, Blue: 255}, secondary: blink1.OffState, primaryFlash: time.Duration(125) * time.Millisecond, alternate: true}
 )
 
 // flags
@@ -254,574 +36,6 @@ var showDotsFlag = flag.Bool("show_dots", true, "Whether to show progress dots a
 
 var debugOut io.Writer = ioutil.Discard
 var dotOut io.Writer = ioutil.Discard
-
-const failureRetries = 3
-
-// blinkerState encapsulates the current device state of the blink(1).
-type blinkerState struct {
-	device      *blink1.Device
-	newState    chan calendarState
-	failures    int
-	maxFailures int
-}
-
-func newBlinkerState(maxFailures int) *blinkerState {
-	blinker := &blinkerState{
-		newState:    make(chan calendarState, 1),
-		maxFailures: maxFailures,
-	}
-	blinker.reinitialize()
-	return blinker
-}
-
-func (blinker *blinkerState) reinitialize() error {
-	if blinker.device != nil {
-		blinker.device.Close()
-		blinker.device = nil
-	}
-	device, err := blink1.OpenNextDevice()
-	if err != nil {
-		blinker.failures++
-		if blinker.failures > blinker.maxFailures {
-			log.Fatalf("Unable to initialize blink(1): %v", err)
-		}
-		fmt.Fprint(dotOut, "X")
-	} else {
-		blinker.failures = 0
-	}
-	blinker.device = device
-	return err
-}
-
-func (blinker *blinkerState) setState(state blink1.State) error {
-	if blinker.failures > 0 {
-		err := blinker.reinitialize()
-		if err != nil {
-			fmt.Fprintf(debugOut, "Reinitialize failed, error %v\n", err)
-			return err
-		}
-	}
-	err := blinker.device.SetState(state)
-	if err != nil {
-		fmt.Fprintf(debugOut, "Re-initializing because of error %v\n", err)
-		err = blinker.reinitialize()
-		if err != nil {
-			fmt.Fprintf(debugOut, "Reinitialize failed, error %v\n", err)
-			return err
-		}
-		// Try one more time before giving up for this pass.
-		err = blinker.device.SetState(state)
-		if err != nil {
-			fmt.Fprintf(debugOut, "Setting blinker state failed, error %v\n", err)
-		}
-	} else {
-		blinker.failures = 0
-	}
-	return err
-}
-
-func (blinker *blinkerState) patternRunner() {
-	currentState := black
-	failing := false
-	err := blinker.setState(currentState.primary)
-	if err != nil {
-		failing = true
-	}
-
-	var ticker <-chan time.Time
-	stateFlip := false
-	for {
-		select {
-		case newState := <-blinker.newState:
-			if newState != currentState || failing {
-				fmt.Fprintf(debugOut, "Changing from state %v to %v\n", currentState, newState)
-				currentState = newState
-				if newState.primaryFlash > 0 || newState.secondaryFlash > 0 {
-					ticker = time.After(time.Millisecond)
-				} else {
-					if ticker != nil {
-						fmt.Fprintf(debugOut, "Killing timer\n")
-						ticker = nil
-					}
-					state1 := newState.primary
-					state1.LED = blink1.LED1
-					state2 := newState.secondary
-					state2.LED = blink1.LED2
-					err1 := blinker.setState(state1)
-					err2 := blinker.setState(state2)
-					failing = (err1 != nil) || (err2 != nil)
-				}
-			} else {
-				fmt.Fprintf(debugOut, "Retaining state %v unchanged\n", newState)
-			}
-
-		case <-ticker:
-			fmt.Fprintf(debugOut, "Timer fired\n")
-			state1 := currentState.primary
-			state2 := currentState.secondary
-			if stateFlip {
-				if currentState.alternate {
-					state1, state2 = state2, state1
-				} else {
-					if currentState.primaryFlash > 0 {
-						state1 = blink1.OffState
-					}
-					if currentState.secondaryFlash > 0 {
-						state2 = blink1.OffState
-					}
-				}
-			}
-			state1.Duration = currentState.primaryFlash
-			state1.FadeTime = state1.Duration
-			if currentState.alternate {
-				state2.Duration, state2.FadeTime = state1.Duration, state1.FadeTime
-
-			} else {
-				state2.Duration = currentState.secondaryFlash
-				state2.FadeTime = state2.Duration
-			}
-			// We set state1 on LED 1 and state2 on LED 2.  On an original (mk1) blink(1) state2 will be ignored.
-			state1.LED = blink1.LED1
-			state2.LED = blink1.LED2
-			fmt.Fprintf(debugOut, "Setting state (%v and %v)\n", state1, state2)
-			err1 := blinker.setState(state1)
-			err2 := blinker.setState(state2)
-			failing = (err1 != nil) || (err2 != nil)
-			stateFlip = !stateFlip
-			nextTick := state1.Duration
-			if state1.Duration == 0 {
-				nextTick = state2.Duration
-			}
-			fmt.Fprintf(debugOut, "Next tick: %s\n", nextTick)
-			ticker = time.After(nextTick)
-		}
-	}
-}
-
-// Signal handler - SIGINT or SIGKILL should turn off the blinker before we exit.
-// SIGQUIT should turn on debug mode.
-
-func signalHandler(blinker *blinkerState) {
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt, os.Kill, syscall.SIGQUIT)
-	for {
-		s := <-interrupt
-		if s == syscall.SIGQUIT {
-			fmt.Println("Turning on debug mode.")
-			debugOut = os.Stdout
-			continue
-		}
-		if blinker.failures == 0 {
-			blinker.newState <- black
-			blinker.device.SetState(blink1.OffState)
-		}
-		log.Fatalf("Quitting due to signal %v", s)
-	}
-}
-
-// HTTP server code to listen to localhost to get an OAuth2 token.
-
-type handler struct {
-	rChan chan string
-	srv   *http.Server
-}
-
-func (h handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	fmt.Fprintln(debugOut, "Starting HTTP handler")
-	url := req.URL
-	if url.Path == "/" {
-		fmt.Fprintf(w, "Token received.  You can close this window.")
-		val := url.Query()
-		code := val["code"][0]
-		fmt.Fprintf(debugOut, "Received code %v\n", code)
-		go h.srv.Shutdown(context.Background())
-		h.rChan <- code
-	} else {
-		w.WriteHeader(http.StatusNotFound)
-	}
-}
-
-func getTokenFromServer() string {
-	rChan := make(chan (string))
-	srv := &http.Server{
-		Addr: ":8844",
-	}
-	srv.Handler = handler{
-		rChan: rChan,
-		srv:   srv,
-	}
-	srv.ListenAndServe()
-
-	code := <-rChan
-
-	return code
-}
-
-// BEGIN GOOGLE CALENDAR API SAMPLE CODE
-
-// getClient uses a Context and Config to retrieve a Token
-// then generate a Client. It returns the generated Client.
-func getClient(ctx context.Context, config *oauth2.Config) *http.Client {
-	cacheFile, err := tokenCacheFile()
-	if err != nil {
-		log.Fatalf("Unable to get path to cached credential file. %v", err)
-	}
-	tok, err := tokenFromFile(cacheFile)
-	if err != nil {
-		tok = getTokenFromWeb(config)
-		saveToken(cacheFile, tok)
-	}
-	return config.Client(ctx, tok)
-}
-
-// getTokenFromWeb uses Config to request a Token.
-// It returns the retrieved Token.
-// Modified from original Google code to use localhost redirect instead of OOB.
-func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
-	config.RedirectURL = "http://localhost:8844"
-	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-	fmt.Printf("Go to the following link in your browser: \n%v\n", authURL)
-
-	code := getTokenFromServer()
-
-	tok, err := config.Exchange(oauth2.NoContext, code)
-	if err != nil {
-		log.Fatalf("Unable to retrieve token from web %v", err)
-	}
-	return tok
-}
-
-// tokenCacheFile generates credential file path/filename.
-// It returns the generated credential path/filename.
-func tokenCacheFile() (string, error) {
-	usr, err := user.Current()
-	if err != nil {
-		return "", err
-	}
-	tokenCacheDir := filepath.Join(usr.HomeDir, ".credentials")
-	os.MkdirAll(tokenCacheDir, 0700)
-	return filepath.Join(tokenCacheDir,
-		url.QueryEscape("calendar-blink1.json")), err
-}
-
-// tokenFromFile retrieves a Token from a given file path.
-// It returns the retrieved Token and any read error encountered.
-func tokenFromFile(file string) (*oauth2.Token, error) {
-	f, err := os.Open(file)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	t := &oauth2.Token{}
-	err = json.NewDecoder(f).Decode(t)
-	return t, err
-}
-
-// saveToken uses a file path to create a file and store the
-// token in it.
-func saveToken(file string, token *oauth2.Token) {
-	fmt.Printf("Saving credential file to: %s\n", file)
-	f, err := os.Create(file)
-	if err != nil {
-		log.Fatalf("Unable to cache oauth token: %v", err)
-	}
-	defer f.Close()
-	json.NewEncoder(f).Encode(token)
-}
-
-// END GOOGLE CALENDAR API SAMPLE CODE
-
-// Event handling methods
-func eventHasAcceptableResponse(item *calendar.Event, responseState responseState) bool {
-	for _, attendee := range item.Attendees {
-		if attendee.Self {
-			return responseState.checkStatus(attendee.ResponseStatus)
-		}
-	}
-	fmt.Fprintf(debugOut, "No self attendee found for %v\n", item)
-	fmt.Fprintf(debugOut, "Attendees: %v\n", item.Attendees)
-	return true
-}
-
-func eventExcludedByPrefs(item string, userPrefs *userPrefs) bool {
-	if userPrefs.excludes[item] {
-		return true
-	}
-	for _, prefix := range userPrefs.excludePrefixes {
-		if strings.HasPrefix(item, prefix) {
-			fmt.Fprintf(debugOut, "Skipping event '%v' due to prefix match '%v'\n", item, prefix)
-			return true
-		}
-	}
-	return false
-}
-
-func nextEvent(items []*calendar.Event, locations []workSite, userPrefs *userPrefs) []*calendar.Event {
-	var events []*calendar.Event
-
-	if len(userPrefs.workingLocations) > 0 {
-		match := false
-		locationSet := make(map[workSite]bool)
-		for _, location := range locations {
-			locationSet[location] = true
-		}
-	
-		for _, prefLocation := range userPrefs.workingLocations {
-			if locationSet[prefLocation] {
-				fmt.Fprintf(debugOut, "Found matching location: %v\n", prefLocation)
-				match = true
-				break
-			}
-		}
-		
-		if !match {
-			fmt.Fprintf(debugOut, "Skipping all events due to no matching locations in %v\n", locations)
-			return events
-		}
-	}
-
-	for _, i := range items {
-		if i.Start.DateTime != "" &&
-			!eventExcludedByPrefs(i.Summary, userPrefs) &&
-			eventHasAcceptableResponse(i, userPrefs.responseState) {
-			events = append(events, i)
-			if len(events) == 2 || (len(events) == 1 && !userPrefs.multiEvent) {
-				break
-			}
-		}
-	}
-	fmt.Fprintf(debugOut, "nextEvent returning %d events\n", len(events))
-	return events
-}
-
-func blinkStateForDelta(delta float64) calendarState {
-	blinkState := black
-	switch {
-	case delta < -1:
-		blinkState = blue
-	case delta < 0:
-		blinkState = blueFlash
-	case delta < 2:
-		blinkState = fastRedFlash
-	case delta < 5:
-		blinkState = redFlash
-	case delta < 10:
-		blinkState = red
-	case delta < 30:
-		blinkState = yellow
-	case delta < 60:
-		blinkState = green
-	}
-	return blinkState
-}
-
-func blinkStateForEvent(next []*calendar.Event, priority int) calendarState {
-	blinkState := black
-	for i, event := range next {
-		startTime, err := time.Parse(time.RFC3339, event.Start.DateTime)
-		if err == nil {
-			delta := -time.Since(startTime).Minutes()
-			if i == 0 {
-				blinkState = blinkStateForDelta(delta)
-			} else {
-				secondary := blinkStateForDelta(delta)
-				if secondary != black {
-					combined := calendarState{name: blinkState.name + "/" + secondary.name,
-						primary:        blinkState.primary,
-						secondary:      secondary.primary,
-						primaryFlash:   blinkState.primaryFlash,
-						secondaryFlash: secondary.primaryFlash,
-						alternate:      false}
-					blinkState = combined
-				}
-				if (priority == 1 && blinkState.primaryFlash == 0 && blinkState.secondaryFlash > 0) ||
-					(priority == 2 && blinkState.primaryFlash > 0 && blinkState.secondaryFlash == 0) {
-					fmt.Fprintf(debugOut, "Swapping")
-					swapped := calendarState{name: blinkState.name + " swapped",
-						primary:        blinkState.secondary,
-						secondary:      blinkState.primary,
-						primaryFlash:   blinkState.secondaryFlash,
-						secondaryFlash: blinkState.primaryFlash,
-						alternate:      false}
-					blinkState = swapped
-				}
-			}
-			fmt.Fprintf(debugOut, "Event %v, time %v, delta %v, state %v\n", event.Summary, startTime, delta, blinkState.name)
-			// Set priority.  If priority is set, and the other light is flashing but the priority one isn't, swap them.
-
-		} else {
-			fmt.Println(err)
-			break
-		}
-	}
-	return blinkState
-}
-
-func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *userPrefs) ([]*calendar.Event, error) {
-	start := now.Format(time.RFC3339)
-	endTime := now.Add(2 * time.Hour)
-	end := endTime.Format(time.RFC3339)
-	var allEvents []*calendar.Event
-	locations := make([]workSite, 0)
-	for _, calendar := range userPrefs.calendars {
-		var locationCreated time.Time
-		var location workSite
-		events, err := srv.Events.List(calendar).ShowDeleted(false).
-			SingleEvents(true).TimeMin(start).TimeMax(end).OrderBy("startTime").
-			EventTypes("default", "focusTime", "outOfOffice", "workingLocation").Do()
-		if err != nil {
-			return nil, err
-		}
-		for _, event := range events.Items {
-			if event.EventType == "workingLocation" {
-				// There's a bug in the Calendar API where a recurring location that is
-				// overridden for the day still shows up in the list of events.  The most
-				// recently created one is the one we want.
-				thisCreated, err := time.Parse(time.RFC3339, event.Created)
-				if err != nil || thisCreated.Before(locationCreated) {
-					continue
-				}
-				locationProperties := event.WorkingLocationProperties
-				locationType := makeWorkSiteType(locationProperties.Type)
-				locationString := ""
-				switch locationType {
-				case workSiteOffice:
-					locationString = locationProperties.OfficeLocation.Label
-				case workSiteCustom:
-					locationString = locationProperties.CustomLocation.Label
-				}
-				location = workSite{siteType: locationType, name: locationString}
-				locationCreated = thisCreated
-				fmt.Fprintf(debugOut, "Location detected: calendar %v, location %v\n", calendar, location)
-			}
-		}
-		if !locationCreated.IsZero() {
-			fmt.Fprintf(debugOut, "Adding final location %v\n", location)
-			locations = append(locations, location)
-		}
-		allEvents = append(allEvents, events.Items...)
-	}
-	if len(userPrefs.calendars) > 1 {
-		// Filter out copies of the same event, or ones with times that don't parse.
-		var filtered []*calendar.Event
-		seen := make(map[string]bool)
-		for _, event := range allEvents {
-			if seen[event.Id] {
-				fmt.Fprintf(debugOut, "Skipping duplicate event with ID %v\n", event.Id)
-				continue
-			}
-			if event.Start.DateTime == "" {
-				fmt.Fprintf(debugOut, "Skipping all-day event %v\n", event.Summary)
-				continue
-			}
-			filtered = append(filtered, event)
-			seen[event.Id] = true
-		}
-		sort.SliceStable(filtered, func(i, j int) bool {
-			t1, err1 := time.Parse(time.RFC3339, filtered[i].Start.DateTime)
-			t2, err2 := time.Parse(time.RFC3339, filtered[j].Start.DateTime)
-			// We should have filtered any bad times out already, so this is a fatal error.
-			if err1 != nil {
-				log.Fatalf("Found bad time after times should have been filtered out: %v\n", err1)
-			}
-			if err2 != nil {
-				log.Fatalf("Found bad time after times should have been filtered out: %v\n", err2)
-			}
-			return t1.Before(t2)
-		})
-		allEvents = filtered
-	}
-	return nextEvent(allEvents, locations, userPrefs), nil
-}
-
-// User preferences methods
-
-func readUserPrefs() *userPrefs {
-	userPrefs := &userPrefs{}
-	// Set defaults from command line
-	userPrefs.pollInterval = *pollIntervalFlag
-	userPrefs.calendars = []string{*calNameFlag}
-	userPrefs.responseState = responseState(*responseStateFlag)
-	userPrefs.deviceFailureRetries = *deviceFailureRetriesFlag
-	userPrefs.showDots = *showDotsFlag
-	file, err := os.Open(*configFileFlag)
-	defer file.Close()
-	if err != nil {
-		// Lack of a config file is not a fatal error.
-		fmt.Fprintf(debugOut, "Unable to read config file %v : %v\n", *configFileFlag, err)
-		return userPrefs
-	}
-	prefs := prefLayout{}
-	decoder := json.NewDecoder(file)
-	decoder.DisallowUnknownFields()
-	err = decoder.Decode(&prefs)
-	fmt.Fprintf(debugOut, "Decoded prefs: %v\n", prefs)
-	if err != nil {
-		log.Fatalf("Unable to parse config file %v", err)
-	}
-	if prefs.StartTime != "" {
-		startTime, err := time.Parse("15:04", prefs.StartTime)
-		if err != nil {
-			log.Fatalf("Invalid start time %v : %v", prefs.StartTime, err)
-		}
-		userPrefs.startTime = &startTime
-	}
-	if prefs.EndTime != "" {
-		endTime, err := time.Parse("15:04", prefs.EndTime)
-		if err != nil {
-			log.Fatalf("Invalid end time %v : %v", prefs.EndTime, err)
-		}
-		userPrefs.endTime = &endTime
-	}
-	userPrefs.excludes = make(map[string]bool)
-	for _, item := range prefs.Excludes {
-		fmt.Fprintf(debugOut, "Excluding item %v\n", item)
-		userPrefs.excludes[item] = true
-	}
-	userPrefs.excludePrefixes = prefs.ExcludePrefixes
-	weekdays := make(map[string]int)
-	for i := 0; i < 7; i++ {
-		weekdays[time.Weekday(i).String()] = i
-	}
-	for _, day := range prefs.SkipDays {
-		i, ok := weekdays[day]
-		if ok {
-			userPrefs.skipDays[i] = true
-		} else {
-			log.Fatalf("Invalid day in skipdays: %v", day)
-		}
-	}
-	if prefs.Calendar != "" {
-		userPrefs.calendars = []string{prefs.Calendar}
-	}
-	if len(prefs.Calendars) > 0 {
-		userPrefs.calendars = prefs.Calendars
-	}
-	if prefs.PollInterval != 0 {
-		userPrefs.pollInterval = int(prefs.PollInterval)
-	}
-	if prefs.ResponseState != "" {
-		userPrefs.responseState = responseState(prefs.ResponseState)
-		if !userPrefs.responseState.isValidState() {
-			log.Fatalf("Invalid response state %v", prefs.ResponseState)
-		}
-	}
-	if prefs.DeviceFailureRetries != 0 {
-		userPrefs.deviceFailureRetries = int(prefs.DeviceFailureRetries)
-	}
-	if prefs.ShowDots != "" {
-		userPrefs.showDots = (prefs.ShowDots == "true")
-	}
-	userPrefs.multiEvent = (prefs.MultiEvent == "true")
-	if prefs.PriorityFlashSide != 0 {
-		userPrefs.priorityFlashSide = int(prefs.PriorityFlashSide)
-	}
-	for _, location := range prefs.WorkingLocations {
-		userPrefs.workingLocations = append(userPrefs.workingLocations, makeWorkSite(location))
-	}
-	fmt.Fprintf(debugOut, "User prefs: %v\n", userPrefs)
-	return userPrefs
-}
 
 // Time calculation methods
 
@@ -854,79 +68,6 @@ func usage() {
 	flag.PrintDefaults()
 }
 
-func printStartInfo(userPrefs *userPrefs) {
-	fmt.Printf("Running with %v second intervals\n", userPrefs.pollInterval)
-	if len(userPrefs.calendars) == 1 {
-		fmt.Printf("Monitoring calendar ID %v\n", userPrefs.calendars[0])
-	} else {
-		fmt.Println("Monitoring calendar IDs:")
-		for _, item := range userPrefs.calendars {
-			fmt.Printf("   %v\n", item)
-		}
-	}
-	switch userPrefs.responseState {
-	case responseStateAll:
-		fmt.Println("All events shown, regardless of accepted/rejected status.")
-	case responseStateAccepted:
-		fmt.Println("Only accepted events shown.")
-	case responseStateNotRejected:
-		fmt.Println("Rejected events not shown.")
-	}
-	if len(userPrefs.workingLocations) > 0 {
-		fmt.Println("Working Locations:")
-		for _, item := range userPrefs.workingLocations {
-			if item.siteType == workSiteHome {
-				fmt.Printf("   Home\n")
-			} else {
-			  	fmt.Printf("   %v: %v\n", item.siteType.toString(), item.name)
-			}
-		}
-	}
-	if len(userPrefs.excludes) > 0 {
-		fmt.Println("Excluded events:")
-		for item := range userPrefs.excludes {
-			fmt.Printf("   %v\n", item)
-		}
-	}
-	if len(userPrefs.excludePrefixes) > 0 {
-		fmt.Println("Excluded event prefixes:")
-		for _, item := range userPrefs.excludePrefixes {
-			fmt.Printf("   %v\n", item)
-		}
-	}
-	skipDays := ""
-	join := ""
-	for i, val := range userPrefs.skipDays {
-		if val {
-			skipDays += join
-			skipDays += time.Weekday(i).String()
-			join = ", "
-		}
-	}
-	if len(skipDays) > 0 {
-		fmt.Println("Skip days: " + skipDays)
-	}
-	timeString := ""
-	if userPrefs.startTime != nil {
-		timeString += fmt.Sprintf("Time restrictions: after %02d:%02d", userPrefs.startTime.Hour(), userPrefs.startTime.Minute())
-	}
-	if userPrefs.endTime != nil {
-		endTimeString := fmt.Sprintf("until %02d:%02d", userPrefs.endTime.Hour(), userPrefs.endTime.Minute())
-		if len(timeString) > 0 {
-			timeString += " and "
-		} else {
-			timeString += "Time restrictions: "
-		}
-		timeString += endTimeString
-	}
-	if len(timeString) > 0 {
-		fmt.Println(timeString)
-	}
-	if userPrefs.multiEvent {
-		fmt.Println("Multievent is active.")
-	}
-}
-
 func main() {
 	flag.Usage = usage
 	flag.Parse()
@@ -941,46 +82,31 @@ func main() {
 	flag.Visit(func(myFlag *flag.Flag) {
 		switch myFlag.Name {
 		case "calendar":
-			userPrefs.calendars = []string{myFlag.Value.String()}
+			userPrefs.Calendars = []string{myFlag.Value.String()}
 		case "poll_interval":
-			userPrefs.pollInterval = myFlag.Value.(flag.Getter).Get().(int)
+			userPrefs.PollInterval = myFlag.Value.(flag.Getter).Get().(int)
 		case "response_state":
-			userPrefs.responseState = responseState(myFlag.Value.String())
-			if !userPrefs.responseState.isValidState() {
-				log.Fatalf("Invalid response state %v", userPrefs.responseState)
+			userPrefs.ResponseState = ResponseState(myFlag.Value.String())
+			if !userPrefs.ResponseState.isValidState() {
+				log.Fatalf("Invalid response state %v", userPrefs.ResponseState)
 			}
 		case "device_failure_retries":
-			userPrefs.deviceFailureRetries = myFlag.Value.(flag.Getter).Get().(int)
+			userPrefs.DeviceFailureRetries = myFlag.Value.(flag.Getter).Get().(int)
 		case "show_dots":
-			userPrefs.showDots = myFlag.Value.(flag.Getter).Get().(bool)
+			userPrefs.ShowDots = myFlag.Value.(flag.Getter).Get().(bool)
 		}
 	})
 
-	if userPrefs.showDots {
+	if userPrefs.ShowDots {
 		dotOut = os.Stdout
 	}
 
-	// BEGIN GOOGLE CALENDAR API SAMPLE CODE
-	ctx := context.Background()
-
-	b, err := loadClientCredentials(*clientSecretFlag)
-	if err != nil {
-		log.Fatalf("Unable to read client secret file: %v", err)
-	}
-
-	config, err := google.ConfigFromJSON(b, calendar.CalendarReadonlyScope)
-	if err != nil {
-		log.Fatalf("Unable to parse client secret file to config: %v", err)
-	}
-	client := getClient(ctx, config)
-
-	srv, err := calendar.NewService(ctx, option.WithHTTPClient(client))
+	srv, err := Connect()
 	if err != nil {
 		log.Fatalf("Unable to retrieve Calendar client: %v", err)
 	}
-	// END GOOGLE CALENDAR API SAMPLE CODE
 
-	blinkerState := newBlinkerState(userPrefs.deviceFailureRetries)
+	blinkerState := NewBlinkerState(userPrefs.DeviceFailureRetries)
 
 	go signalHandler(blinkerState)
 	go blinkerState.patternRunner()
@@ -992,31 +118,31 @@ func main() {
 	for {
 		now := time.Now()
 		weekday := now.Weekday()
-		if userPrefs.skipDays[weekday] {
+		if userPrefs.SkipDays[weekday] {
 			tomorrow := tomorrow()
 			untilTomorrow := tomorrow.Sub(now)
-			black.execute(blinkerState)
+			Black.Execute(blinkerState)
 			fmt.Fprintf(debugOut, "Sleeping %v until tomorrow because it's a skip day\n", untilTomorrow)
 			fmt.Fprint(dotOut, "~")
 			sleep(untilTomorrow)
 			continue
 		}
-		if userPrefs.startTime != nil {
-			start := setHourMinuteFromTime(*userPrefs.startTime)
+		if userPrefs.StartTime != nil {
+			start := setHourMinuteFromTime(*userPrefs.StartTime)
 			fmt.Fprintf(debugOut, "Start time: %v\n", start)
 			if diff := time.Since(start); diff < 0 {
-				black.execute(blinkerState)
+				Black.Execute(blinkerState)
 				fmt.Fprintf(debugOut, "Sleeping %v because start time after now\n", -diff)
 				fmt.Fprint(dotOut, ">")
 				sleep(-diff)
 				continue
 			}
 		}
-		if userPrefs.endTime != nil {
-			end := setHourMinuteFromTime(*userPrefs.endTime)
+		if userPrefs.EndTime != nil {
+			end := setHourMinuteFromTime(*userPrefs.EndTime)
 			fmt.Fprintf(debugOut, "End time: %v\n", end)
 			if diff := time.Since(end); diff > 0 {
-				black.execute(blinkerState)
+				Black.Execute(blinkerState)
 				tomorrow := tomorrow()
 				untilTomorrow := tomorrow.Sub(now)
 				fmt.Fprintf(debugOut, "Sleeping %v until tomorrow because end time %v before now\n", untilTomorrow, diff)
@@ -1031,20 +157,20 @@ func main() {
 			// set the color to blinking magenta to tell the user we are in a failed state.
 			failures++
 			if failures > failureRetries {
-				magentaFlash.execute(blinkerState)
+				MagentaFlash.Execute(blinkerState)
 			}
 			fmt.Fprintf(debugOut, "Fetch Error:\n%v\n", err)
 			fmt.Fprint(dotOut, ",")
-			sleep(time.Duration(userPrefs.pollInterval) * time.Second)
+			sleep(time.Duration(userPrefs.PollInterval) * time.Second)
 			continue
 		} else {
 			failures = 0
 		}
-		blinkState := blinkStateForEvent(next, userPrefs.priorityFlashSide)
+		blinkState := blinkStateForEvent(next, userPrefs.PriorityFlashSide)
 
-		blinkState.execute(blinkerState)
+		blinkState.Execute(blinkerState)
 		fmt.Fprint(dotOut, ".")
-		sleep(time.Duration(userPrefs.pollInterval) * time.Second)
+		sleep(time.Duration(userPrefs.PollInterval) * time.Second)
 	}
 	
 
