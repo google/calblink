@@ -38,7 +38,7 @@ To use calblink, you need the following:
 1.  Install Go, and plug your blink(1) in somewhere that you can see it.
 2.  Bring up a command-line window, and create the directory you want to run
     this in.
-3.  Put calblink.go into the directory you just created.
+3.  Put all .go files in this repo into the directory you just created.
 4.  Install libusb-compat, if needed.
 5.  Create your module file:
     ```
@@ -53,13 +53,13 @@ To use calblink, you need the following:
 8.  Build the calblink program as appropriate for your environment:
     * For a Linux environment or another that doesn't use Homebrew:
     
-            go build calblink.go
+            go build
     * For a default Homebrew install on an Intel-based Mac:
     
-            CGO_LDFLAGS="-L/usr/local/lib" CGO_CFLAGS="-I/usr/local/include" go build calblink.go
+            CGO_LDFLAGS="-L/usr/local/lib" CGO_CFLAGS="-I/usr/local/include" go build
  	* For a default Homebrew install on an ARM-based Mac:
  	
-			CGO_LDFLAGS="-L/opt/homebrew/lib" CGO_CFLAGS="-I/opt/homebrew/include" go build calblink.go
+			CGO_LDFLAGS="-L/opt/homebrew/lib" CGO_CFLAGS="-I/opt/homebrew/include" go build
 	* For a customized Homebrew install, modify the above to match your configuration.
         
 8.  Run the calblink program:
@@ -185,6 +185,8 @@ To comply with the new security measure and meet the new requirements, please fo
 ## Known Issues
 
 *   Occasionally the shutdown is not as clean as it should be.
+*   If the blink(1) becomes disconnected, sometimes the program crashes instead of failing
+    gracefully.
 
 ## Troubleshooting
 
