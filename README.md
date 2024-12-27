@@ -194,8 +194,12 @@ To comply with the new security measure and meet the new requirements, please fo
     or authenticate to the Google Calendar server.  If your network is okay, your
     auth token may have expired.  Remove ~/.credentials/calendar-blink1.json and
     reconnect the app to your account.
-*   Another reason it may flash magenta is an issue with Go 1.8 and Xcode 8.3
-    or later. Upgrade to Go 1.8.1 to fix this issue.
+*   If an error message about "no required module provides package..." comes up after
+    updating calblink, run the following to update all needed modules:
+    ```
+    go get -u
+    go mod tidy
+    ```
 *   If attempting to install the blink1 go library or run calblink.go on OSX
     gives an error about "'usb.h' file not found", make sure that C_INCLUDE_PATH
     and LIBRARY_PATH are set appropriately.
