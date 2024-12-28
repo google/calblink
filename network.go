@@ -45,7 +45,7 @@ func loadClientCredentials(clientSecretPath string) ([]byte, error) {
 		return nil, fmt.Errorf("client secret file not found: %s", clientSecretPath)
 	}
 	// Check if the file has secure permissions (readable only by owner)
-	if info.Mode().Perm() & 077 != 0 {
+	if info.Mode().Perm()&077 != 0 {
 		return nil, fmt.Errorf("insecure permissions for client secret file: %s", clientSecretPath)
 	}
 	// Read the contents of the file

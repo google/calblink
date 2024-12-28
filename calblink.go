@@ -22,6 +22,8 @@ import (
 	"log"
 	"os"
 	"time"
+
+	"github.com/kardianos/service"
 )
 
 // flags
@@ -33,9 +35,18 @@ var pollIntervalFlag = flag.Int("poll_interval", 30, "Number of seconds between 
 var responseStateFlag = flag.String("response_state", "notRejected", "Which events to consider based on response: all, accepted, or notRejected")
 var deviceFailureRetriesFlag = flag.Int("device_failure_retries", 10, "Number of times to retry initializing the device before quitting the program")
 var showDotsFlag = flag.Bool("show_dots", true, "Whether to show progress dots after every cycle of checking the calendar")
+var runAsServiceFlag = flag.Bool("runAsService", false, "Whether to run as a service or remain live in the current shell")
+var serviceFlag = flag.String("service", "", "Control the system service.")
 
 var debugOut io.Writer = ioutil.Discard
 var dotOut io.Writer = ioutil.Discard
+
+// Necessary status for running as a service
+type program struct {
+	service   service.Service
+	userPrefs *UserPrefs
+	exit      chan struct{}
+}
 
 // Time calculation methods
 
@@ -47,18 +58,6 @@ func tomorrow() time.Time {
 func setHourMinuteFromTime(t time.Time) time.Time {
 	now := time.Now()
 	return time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
-}
-
-func sleep(d time.Duration) {
-	// To fix the 'oversleeping' problem where we sleep too long if the machine goes to
-	// sleep in the meantime, sleep for no more than 5 minutes at once.
-	// TODO: Once the AbsoluteNow proposal goes in, replace this with that.
-	max := time.Duration(5) * time.Minute
-	if d > max {
-		fmt.Fprintf(debugOut, "Cutting sleep short from %d to %d", d, max)
-		d = max
-	}
-	time.Sleep(d)
 }
 
 // Print output methods
@@ -75,8 +74,10 @@ func main() {
 	if *debugFlag {
 		debugOut = os.Stdout
 	}
-	
+
 	userPrefs := readUserPrefs()
+	isService := false
+	serviceCmd := ""
 
 	// Overrides from command-line
 	flag.Visit(func(myFlag *flag.Flag) {
@@ -94,13 +95,32 @@ func main() {
 			userPrefs.DeviceFailureRetries = myFlag.Value.(flag.Getter).Get().(int)
 		case "show_dots":
 			userPrefs.ShowDots = myFlag.Value.(flag.Getter).Get().(bool)
+		case "runAsService":
+			isService = myFlag.Value.(flag.Getter).Get().(bool)
+		case "service":
+			serviceCmd = myFlag.Value.String()
 		}
 	})
 
-	if userPrefs.ShowDots {
+	if userPrefs.ShowDots && !isService {
 		dotOut = os.Stdout
 	}
 
+	prg := &program{
+		userPrefs: userPrefs,
+		exit:      make(chan struct{}),
+	}
+
+	if isService {
+		prg.StartService(serviceCmd)
+	} else {
+		runLoop(prg)
+	}
+
+}
+
+func runLoop(p *program) {
+	userPrefs := p.userPrefs
 	srv, err := Connect()
 	if err != nil {
 		log.Fatalf("Unable to retrieve Calendar client: %v", err)
@@ -111,67 +131,80 @@ func main() {
 	go signalHandler(blinkerState)
 	go blinkerState.patternRunner()
 
-	printStartInfo(userPrefs)
+	if p.service == nil {
+		printStartInfo(userPrefs)
+	} else {
+		fmt.Printf("Calblink starting at %v\n", time.Now())
+	}
 
+	ticker := time.NewTicker(time.Second)
+	nextEvent := time.Now()
 	failures := 0
 
 	for {
-		now := time.Now()
-		weekday := now.Weekday()
-		if userPrefs.SkipDays[weekday] {
-			tomorrow := tomorrow()
-			untilTomorrow := tomorrow.Sub(now)
-			Black.Execute(blinkerState)
-			fmt.Fprintf(debugOut, "Sleeping %v until tomorrow because it's a skip day\n", untilTomorrow)
-			fmt.Fprint(dotOut, "~")
-			sleep(untilTomorrow)
-			continue
-		}
-		if userPrefs.StartTime != nil {
-			start := setHourMinuteFromTime(*userPrefs.StartTime)
-			fmt.Fprintf(debugOut, "Start time: %v\n", start)
-			if diff := time.Since(start); diff < 0 {
-				Black.Execute(blinkerState)
-				fmt.Fprintf(debugOut, "Sleeping %v because start time after now\n", -diff)
-				fmt.Fprint(dotOut, ">")
-				sleep(-diff)
+		select {
+		case <-p.exit:
+			blinkerState.turnOff()
+			fmt.Printf("Calblink exiting at %v\n", time.Now())
+			ticker.Stop()
+			return
+		case now := <-ticker.C:
+			if nextEvent.After(now) {
 				continue
 			}
-		}
-		if userPrefs.EndTime != nil {
-			end := setHourMinuteFromTime(*userPrefs.EndTime)
-			fmt.Fprintf(debugOut, "End time: %v\n", end)
-			if diff := time.Since(end); diff > 0 {
-				Black.Execute(blinkerState)
+			weekday := now.Weekday()
+			if userPrefs.SkipDays[weekday] {
 				tomorrow := tomorrow()
-				untilTomorrow := tomorrow.Sub(now)
-				fmt.Fprintf(debugOut, "Sleeping %v until tomorrow because end time %v before now\n", untilTomorrow, diff)
-				fmt.Fprint(dotOut, "<")
-				sleep(untilTomorrow)
+				Black.Execute(blinkerState)
+				fmt.Fprintf(debugOut, "Sleeping until tomorrow (%v) because it's a skip day\n", tomorrow)
+				fmt.Fprint(dotOut, "~")
+				nextEvent = tomorrow
 				continue
 			}
-		}
-		next, err := fetchEvents(now, srv, userPrefs)
-		if err != nil {
-			// Leave the same color, set a flag. If we get more than a critical number of these,
-			// set the color to blinking magenta to tell the user we are in a failed state.
-			failures++
-			if failures > failureRetries {
-				MagentaFlash.Execute(blinkerState)
+			if userPrefs.StartTime != nil {
+				start := setHourMinuteFromTime(*userPrefs.StartTime)
+				fmt.Fprintf(debugOut, "Start time: %v\n", start)
+				if diff := time.Since(start); diff < 0 {
+					Black.Execute(blinkerState)
+					fmt.Fprintf(debugOut, "Sleeping %v because start time after now\n", -diff)
+					fmt.Fprint(dotOut, ">")
+					nextEvent = start
+					continue
+				}
 			}
-			fmt.Fprintf(debugOut, "Fetch Error:\n%v\n", err)
-			fmt.Fprint(dotOut, ",")
-			sleep(time.Duration(userPrefs.PollInterval) * time.Second)
-			continue
-		} else {
-			failures = 0
+			if userPrefs.EndTime != nil {
+				end := setHourMinuteFromTime(*userPrefs.EndTime)
+				fmt.Fprintf(debugOut, "End time: %v\n", end)
+				if diff := time.Since(end); diff > 0 {
+					Black.Execute(blinkerState)
+					tomorrow := tomorrow()
+					untilTomorrow := tomorrow.Sub(now)
+					fmt.Fprintf(debugOut, "Sleeping %v until tomorrow because end time %v before now\n", untilTomorrow, diff)
+					fmt.Fprint(dotOut, "<")
+					nextEvent = tomorrow
+					continue
+				}
+			}
+			next, err := fetchEvents(now, srv, userPrefs)
+			if err != nil {
+				// Leave the same color, set a flag. If we get more than a critical number of these,
+				// set the color to blinking magenta to tell the user we are in a failed state.
+				failures++
+				if failures > failureRetries {
+					MagentaFlash.Execute(blinkerState)
+				}
+				fmt.Fprintf(debugOut, "Fetch Error:\n%v\n", err)
+				fmt.Fprint(dotOut, ",")
+				nextEvent = now.Add(time.Duration(userPrefs.PollInterval) * time.Second)
+				continue
+			} else {
+				failures = 0
+			}
+			blinkState := blinkStateForEvent(next, userPrefs.PriorityFlashSide)
+
+			blinkState.Execute(blinkerState)
+			fmt.Fprint(dotOut, ".")
+			nextEvent = now.Add(time.Duration(userPrefs.PollInterval) * time.Second)
 		}
-		blinkState := blinkStateForEvent(next, userPrefs.PriorityFlashSide)
-
-		blinkState.Execute(blinkerState)
-		fmt.Fprint(dotOut, ".")
-		sleep(time.Duration(userPrefs.PollInterval) * time.Second)
 	}
-	
-
 }

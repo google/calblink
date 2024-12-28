@@ -49,6 +49,11 @@ To use calblink, you need the following:
 7.  Get an OAuth 2 ID as described in step 1 of the [Google Calendar
     Quickstart](https://developers.google.com/google-apps/calendar/quickstart/go).
     Put the client\_secret.json file in your GOPATH directory.
+    
+7.  Make sure the client\_secret.json file is secure by changing its permissions
+    to only allow the user to read it:
+    
+        chmod 600 client_secret.json
 
 8.  Build the calblink program as appropriate for your environment:
     * For a Linux environment or another that doesn't use Homebrew:
@@ -76,6 +81,9 @@ To use calblink, you need the following:
     terminal window every time it checks the server and sets the LED.
 
 11. Optionally, set up a config file, as below.
+
+12. Once everything is working, you can consider enabling [service mode](SERVICE.md) to
+    have it run automatically in the background.
 
 ## What are the configuration options?
 
@@ -185,6 +193,7 @@ To comply with the new security measure and meet the new requirements, please fo
 ## Known Issues
 
 *   Occasionally the shutdown is not as clean as it should be.
+*   Something seems to cause an occasional crash.
 *   If the blink(1) becomes disconnected, sometimes the program crashes instead of failing
     gracefully.
 
@@ -214,4 +223,6 @@ To comply with the new security measure and meet the new requirements, please fo
 *   Calblink contains code from the [Google Calendar API
     Quickstart](https://developers.google.com/google-apps/calendar/quickstart/go)
     which is licensed under the Apache 2 license.
+*   Calblink uses the [Go service](https://github.com/kardianos/service/) library for
+    managing service mode.
 *   All trademarks are the property of their respective holders.
