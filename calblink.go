@@ -18,7 +18,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"time"
@@ -38,8 +37,8 @@ var showDotsFlag = flag.Bool("show_dots", true, "Whether to show progress dots a
 var runAsServiceFlag = flag.Bool("runAsService", false, "Whether to run as a service or remain live in the current shell")
 var serviceFlag = flag.String("service", "", "Control the system service.")
 
-var debugOut io.Writer = ioutil.Discard
-var dotOut io.Writer = ioutil.Discard
+var debugOut io.Writer = io.Discard
+var dotOut io.Writer = io.Discard
 
 // Necessary status for running as a service
 type program struct {

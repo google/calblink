@@ -19,7 +19,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -49,7 +48,7 @@ func loadClientCredentials(clientSecretPath string) ([]byte, error) {
 		return nil, fmt.Errorf("insecure permissions for client secret file: %s", clientSecretPath)
 	}
 	// Read the contents of the file
-	content, err := ioutil.ReadFile(clientSecretPath)
+	content, err := os.ReadFile(clientSecretPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read client secret file: %v", err)
 	}

@@ -34,7 +34,7 @@ func (p *program) StartService(serviceCmd string) {
 		Description:      "Service to monitor Google Calendar to control a blink(1)",
 		Arguments:        []string{"-runAsService"},
 		WorkingDirectory: dir,
-		Option:           service.KeyValue {
+		Option: service.KeyValue{
 			"UserService": true,
 		},
 	}
