@@ -45,37 +45,51 @@ To use calblink, you need the following:
     go mod init calblink
     go mod tidy
     ```
+6.  If you already have a `go.mod` and `go.sum`, you may need to update it
+    before compiling.
+    ```
+    go get -u
+    go mod tidy
+    ```
     
 7.  Get an OAuth 2 ID as described in step 1 of the [Google Calendar
     Quickstart](https://developers.google.com/google-apps/calendar/quickstart/go).
     Put the client\_secret.json file in your GOPATH directory.
+    
+8.  Make sure the client\_secret.json file is secure by changing its permissions
+    to only allow the user to read it:
+    
+        chmod 600 client_secret.json
 
-8.  Build the calblink program as appropriate for your environment:
+9.  Build the calblink program as appropriate for your environment:
     * For a Linux environment or another that doesn't use Homebrew:
     
             go build
     * For a default Homebrew install on an Intel-based Mac:
     
             CGO_LDFLAGS="-L/usr/local/lib" CGO_CFLAGS="-I/usr/local/include" go build
- 	* For a default Homebrew install on an ARM-based Mac:
- 	
-			CGO_LDFLAGS="-L/opt/homebrew/lib" CGO_CFLAGS="-I/opt/homebrew/include" go build
-	* For a customized Homebrew install, modify the above to match your configuration.
+    * For a default Homebrew install on an ARM-based Mac:
+
+            CGO_LDFLAGS="-L/opt/homebrew/lib" CGO_CFLAGS="-I/opt/homebrew/include" go build
+    * For a customized Homebrew install, modify the above to match your configuration.
         
-8.  Run the calblink program:
+10. Run the calblink program:
 
         ./calblink
 
-9.  It will request that you go to a URL. On macOS, it will also request that you allow
+11. It will request that you go to a URL. On macOS, it will also request that you allow
     the program to receive network requests; you should allow this.  You should access
     this URL from the account you want to read the calendar of.
 
-10. That's it! It should just run now, and set your blink(1) to change color
+12. That's it! It should just run now, and set your blink(1) to change color
     appropriately. To quit out of it, hit Ctrl-C in the window you ran it in.
     (It will turn the blink(1) off automatically.) It will output a . into the
     terminal window every time it checks the server and sets the LED.
 
-11. Optionally, set up a config file, as below.
+13. Optionally, set up a config file, as below.
+
+14. Once everything is working, you can consider enabling [service mode](SERVICE.md) to
+    have it run automatically in the background.
 
 ## What are the configuration options?
 
@@ -185,6 +199,7 @@ To comply with the new security measure and meet the new requirements, please fo
 ## Known Issues
 
 *   Occasionally the shutdown is not as clean as it should be.
+*   Something seems to cause an occasional crash.
 *   If the blink(1) becomes disconnected, sometimes the program crashes instead of failing
     gracefully.
 
@@ -214,4 +229,6 @@ To comply with the new security measure and meet the new requirements, please fo
 *   Calblink contains code from the [Google Calendar API
     Quickstart](https://developers.google.com/google-apps/calendar/quickstart/go)
     which is licensed under the Apache 2 license.
+*   Calblink uses the [Go service](https://github.com/kardianos/service/) library for
+    managing service mode.
 *   All trademarks are the property of their respective holders.
