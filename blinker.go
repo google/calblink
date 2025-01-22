@@ -113,6 +113,10 @@ func (blinker *BlinkerState) reinitialize() error {
 	return err
 }
 
+func (blinker *BlinkerState) turnOff() {
+	blinker.device.SetState(blink1.OffState)
+}
+
 func (blinker *BlinkerState) setState(state blink1.State) error {
 	if blinker.failures > 0 {
 		err := blinker.reinitialize()
@@ -232,8 +236,7 @@ func signalHandler(blinker *BlinkerState) {
 			continue
 		}
 		if blinker.failures == 0 {
-			blinker.newState <- Black
-			blinker.device.SetState(blink1.OffState)
+			blinker.turnOff()
 		}
 		log.Fatalf("Quitting due to signal %v", s)
 	}
