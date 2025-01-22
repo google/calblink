@@ -54,14 +54,27 @@ To use calblink, you need the following:
     
 7.  Get an OAuth 2 ID as described in step 1 of the [Google Calendar
     Quickstart](https://developers.google.com/google-apps/calendar/quickstart/go).
-    Put the client\_secret.json file in your GOPATH directory.
+    +   NOTE: If you are using a consumer Gmail account (as opposed to a Workspace
+        account) there are some additional steps required here.  If you are using a
+        Workspace account, these steps can be skipped.
+        1.  The Quickstart will recommend creating an Internal app, but that is only
+            available for Workspace accounts.  Instead, create an External app.  Enter
+            the necessary information on the first screen, then select 'Save and
+            Continue'.
+        2.  The next screen should include a button to 'Add or Remove Scopes'.  Select
+            that and add the scope '.../auth/calendar.readonly', listed under 'Google
+            Calendar API'.  Once that is done, select 'Save and Continue'.
+        3.  Select '+ Add Users' to add a test user to the app.  Give the email address
+            you intend to log in from.  Select 'Save and Continue' once again.
+               
+8.  Put the client\_secret.json file in your GOPATH directory.
     
-8.  Make sure the client\_secret.json file is secure by changing its permissions
+9.  Make sure the client\_secret.json file is secure by changing its permissions
     to only allow the user to read it:
     
         chmod 600 client_secret.json
 
-9.  Build the calblink program as appropriate for your environment:
+10. Build the calblink program as appropriate for your environment:
     * For a Linux environment or another that doesn't use Homebrew:
     
             go build
@@ -73,22 +86,22 @@ To use calblink, you need the following:
             CGO_LDFLAGS="-L/opt/homebrew/lib" CGO_CFLAGS="-I/opt/homebrew/include" go build
     * For a customized Homebrew install, modify the above to match your configuration.
         
-10. Run the calblink program:
+11. Run the calblink program:
 
         ./calblink
 
-11. It will request that you go to a URL. On macOS, it will also request that you allow
+12. It will request that you go to a URL. On macOS, it will also request that you allow
     the program to receive network requests; you should allow this.  You should access
     this URL from the account you want to read the calendar of.
 
-12. That's it! It should just run now, and set your blink(1) to change color
+13. That's it! It should just run now, and set your blink(1) to change color
     appropriately. To quit out of it, hit Ctrl-C in the window you ran it in.
     (It will turn the blink(1) off automatically.) It will output a . into the
     terminal window every time it checks the server and sets the LED.
 
-13. Optionally, set up a config file, as below.
+14. Optionally, set up a config file, as below.
 
-14. Once everything is working, you can consider enabling [service mode](SERVICE.md) to
+15. Once everything is working, you can consider enabling [service mode](SERVICE.md) to
     have it run automatically in the background.
 
 ## What are the configuration options?
@@ -221,6 +234,10 @@ To comply with the new security measure and meet the new requirements, please fo
 *   Sending a SIGQUIT will turn on debug mode while the app is running.  By
     default on Unix-based systems, this is sent by hitting Ctrl-\\ (backslash).
     There is currently no way to turn debug mode off once it is set.
+*   If attempting to run gives an error about 'invalid\_grant' and 'Bad Request', confirm
+    that the OAuth scopes and test users are specified properly if you are using an
+    External app (as you must when using a non-Workspace account).  In this case, check
+    the note under installation step 7.
 
 ## Legal
 
