@@ -204,7 +204,7 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *UserPrefs) ([]
 					skip = true
 					break
 				} else {
-					fmt.Fprintf(debugOut, "Not applying OOO event %v to calendar %v because start is %v\n", event, calendar, event.Start.DateTime)
+					fmt.Fprintf(debugOut, "Not applying OOO event %v to calendar %v\n", event, calendar)
 				}
 			}
 		}
