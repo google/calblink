@@ -192,7 +192,7 @@ func runLoop(p *program) {
 				if failures > failureRetries {
 					MagentaFlash.Execute(blinkerState)
 				}
-				fmt.Fprintf(debugOut, "Fetch Error:\n%v\n", err)
+				fmt.Fprintf(os.Stderr, "Error receiving events from server:\n%v\n", err)
 				fmt.Fprint(dotOut, ",")
 				nextEvent = now.Add(time.Duration(userPrefs.PollInterval) * time.Second)
 				continue
