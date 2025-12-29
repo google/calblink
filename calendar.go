@@ -149,6 +149,7 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *UserPrefs) ([]
 	for _, calendar := range userPrefs.Calendars {
 		var locationCreated time.Time
 		var location WorkSite
+		skip := false
 		events, err := srv.Events.List(calendar).ShowDeleted(false).
 			SingleEvents(true).TimeMin(start).TimeMax(end).OrderBy("startTime").
 			EventTypes("default", "focusTime", "outOfOffice", "workingLocation").Do()
@@ -189,14 +190,32 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *UserPrefs) ([]
 					locations = append(locations, WorkSite{SiteType: locationType, Name: locationString})
 				}
 				fmt.Fprintf(debugOut, "Location detected: calendar %v, location %v\n", calendar, location)
+			} else if event.EventType == "outOfOffice" {
+				// OOO events don't use an empty start time to indicate an all-day event.
+				// Instead, check if the start is before our current window and the end
+				// is after it ends, and if so, skip this entire calendar.
+				eventStart, err1 := time.Parse(time.RFC3339, event.Start.DateTime)
+				eventEnd, err2 := time.Parse(time.RFC3339, event.End.DateTime)
+				if err1 != nil || err2 != nil {
+					fmt.Fprintf(debugOut, "Skipping event %v because of time parse errors: %v, %v\n", event.Summary, err1, err2)
+				}
+				if eventStart.Before(now) && eventEnd.After(endTime) {
+					fmt.Fprintf(debugOut, "Skipping calendar %v due to OOO\n", calendar)
+					skip = true
+					break
+				} else {
+					fmt.Fprintf(debugOut, "Not applying OOO event %v to calendar %v\n", event, calendar)
+				}
 			}
 		}
-		if !locationCreated.IsZero() {
-			fmt.Fprintf(debugOut, "Adding final location %v\n", location)
-			locations = append(locations, location)
-			fmt.Fprintf(debugOut, "Locations: %v\n", locations)
+		if !skip {
+			if !locationCreated.IsZero() {
+				fmt.Fprintf(debugOut, "Adding final location %v\n", location)
+				locations = append(locations, location)
+				fmt.Fprintf(debugOut, "Locations: %v\n", locations)
+			}
+			allEvents = append(allEvents, events.Items...)
 		}
-		allEvents = append(allEvents, events.Items...)
 	}
 	if len(userPrefs.Calendars) > 1 {
 		// Filter out copies of the same event, or ones with times that don't parse.
