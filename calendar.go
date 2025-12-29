@@ -202,6 +202,7 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *UserPrefs) ([]
 				if eventStart.Before(now) && eventEnd.After(endTime) {
 					fmt.Fprintf(debugOut, "Skipping calendar %v due to OOO\n", calendar)
 					skip = true
+					break
 				} else {
 					fmt.Fprintf(debugOut, "Not applying OOO event %v to calendar %v because start is %v\n", event, calendar, event.Start.DateTime)
 				}
