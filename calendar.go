@@ -157,11 +157,19 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *UserPrefs) ([]
 		}
 		for _, event := range events.Items {
 			if event.EventType == "workingLocation" {
-				// There's a bug in the Calendar API where a recurring location that is
-				// overridden for the day still shows up in the list of events.  The most
-				// recently created one is the one we want.
+				// The calendar event can return three or more working locations: 
+				// 1. The recurring one for the given day of the week
+				// 2. The override for that particular day
+				// 3. Any time overrides that are currently set for specific hours of the day.
+				// 
+				// The logic here isn't complicated enough to manage matching events to
+				// a location, so instead, gather the latest all-date event and all
+				// time overrides.  Any event that matches one of those will have an
+				// acceptable location.
+				isAllDay := (event.Start.DateTime == "")
 				thisCreated, err := time.Parse(time.RFC3339, event.Created)
-				if err != nil || thisCreated.Before(locationCreated) {
+				if err != nil || (thisCreated.Before(locationCreated) && isAllDay) {
+					fmt.Fprintf(debugOut, "Skipping location event %v because it's before the current one\n", event.Summary)
 					continue
 				}
 				locationProperties := event.WorkingLocationProperties
@@ -173,14 +181,20 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *UserPrefs) ([]
 				case WorkSiteCustom:
 					locationString = locationProperties.CustomLocation.Label
 				}
-				location = WorkSite{SiteType: locationType, Name: locationString}
-				locationCreated = thisCreated
+				if isAllDay {
+					location = WorkSite{SiteType: locationType, Name: locationString}
+					locationCreated = thisCreated
+				} else {
+					fmt.Fprintf(debugOut, "Location Override detected: calendar %v, location %v", calendar, location)
+					locations = append(locations, WorkSite{SiteType: locationType, Name: locationString})
+				}
 				fmt.Fprintf(debugOut, "Location detected: calendar %v, location %v\n", calendar, location)
 			}
 		}
 		if !locationCreated.IsZero() {
 			fmt.Fprintf(debugOut, "Adding final location %v\n", location)
 			locations = append(locations, location)
+			fmt.Fprintf(debugOut, "Locations: %v\n", locations)
 		}
 		allEvents = append(allEvents, events.Items...)
 	}
@@ -191,6 +205,10 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *UserPrefs) ([]
 		for _, event := range allEvents {
 			if seen[event.Id] {
 				fmt.Fprintf(debugOut, "Skipping duplicate event with ID %v\n", event.Id)
+				continue
+			}
+			if event.EventType == "workingLocation" || event.EventType == "outOfOffice" {
+				fmt.Fprintf(debugOut, "Skipping working location/OOO event %v\n", event.Summary)
 				continue
 			}
 			if event.Start.DateTime == "" {
