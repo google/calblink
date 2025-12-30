@@ -86,13 +86,13 @@ type handler struct {
 }
 
 func (h handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	fmt.Fprintln(debugOut, "Starting HTTP handler")
+	debugLog("Starting HTTP handler\n")
 	url := req.URL
 	if url.Path == "/" {
 		fmt.Fprintf(w, "Token received.  You can close this window.")
 		val := url.Query()
 		code := val["code"][0]
-		fmt.Fprintf(debugOut, "Received code %v\n", code)
+		debugLog("Received code %v\n", code)
 		go h.srv.Shutdown(context.Background())
 		h.rChan <- code
 	} else {

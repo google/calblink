@@ -172,7 +172,7 @@ func makeWorkSite(location string) WorkSite {
 	if len(split) > 1 {
 		name = split[1]
 	}
-	fmt.Fprintf(debugOut, "Work Site: type %v, name %v", siteType, name)
+	debugLog("Work Site: type %v, name %v", siteType, name)
 	return WorkSite{SiteType: siteType, Name: name}
 }
 
@@ -190,14 +190,14 @@ func readUserPrefs() *UserPrefs {
 	defer file.Close()
 	if err != nil {
 		// Lack of a config file is not a fatal error.
-		fmt.Fprintf(debugOut, "Unable to read config file %v : %v\n", *configFileFlag, err)
+		debugLog("Unable to read config file %v : %v\n", *configFileFlag, err)
 		return userPrefs
 	}
 	prefs := prefLayout{}
 	decoder := json.NewDecoder(file)
 	decoder.DisallowUnknownFields()
 	err = decoder.Decode(&prefs)
-	fmt.Fprintf(debugOut, "Decoded prefs: %v\n", prefs)
+	debugLog("Decoded prefs: %v\n", prefs)
 	if err != nil {
 		log.Fatalf("Unable to parse config file %v", err)
 	}
@@ -217,7 +217,7 @@ func readUserPrefs() *UserPrefs {
 	}
 	userPrefs.Excludes = make(map[string]bool)
 	for _, item := range prefs.Excludes {
-		fmt.Fprintf(debugOut, "Excluding item %v\n", item)
+		debugLog("Excluding item %v\n", item)
 		userPrefs.Excludes[item] = true
 	}
 	userPrefs.ExcludePrefixes = prefs.ExcludePrefixes
@@ -261,7 +261,7 @@ func readUserPrefs() *UserPrefs {
 	for _, location := range prefs.WorkingLocations {
 		userPrefs.WorkingLocations = append(userPrefs.WorkingLocations, makeWorkSite(location))
 	}
-	fmt.Fprintf(debugOut, "User prefs: %v\n", userPrefs)
+	debugLog("User prefs: %v\n", userPrefs)
 	return userPrefs
 }
 

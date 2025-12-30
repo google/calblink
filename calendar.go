@@ -17,7 +17,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"sort"
 	"strings"
@@ -33,8 +32,8 @@ func eventHasAcceptableResponse(item *calendar.Event, responseState ResponseStat
 			return responseState.CheckStatus(attendee.ResponseStatus)
 		}
 	}
-	fmt.Fprintf(debugOut, "No self attendee found for %v\n", item)
-	fmt.Fprintf(debugOut, "Attendees: %v\n", item.Attendees)
+	debugLog("No self attendee found for %v\n", item)
+	debugLog("Attendees: %v\n", item.Attendees)
 	return true
 }
 
@@ -44,7 +43,7 @@ func eventExcludedByPrefs(item string, userPrefs *UserPrefs) bool {
 	}
 	for _, prefix := range userPrefs.ExcludePrefixes {
 		if strings.HasPrefix(item, prefix) {
-			fmt.Fprintf(debugOut, "Skipping event '%v' due to prefix match '%v'\n", item, prefix)
+			debugLog("Skipping event '%v' due to prefix match '%v'\n", item, prefix)
 			return true
 		}
 	}
@@ -63,14 +62,14 @@ func nextEvent(items []*calendar.Event, locations []WorkSite, userPrefs *UserPre
 
 		for _, prefLocation := range userPrefs.WorkingLocations {
 			if locationSet[prefLocation] {
-				fmt.Fprintf(debugOut, "Found matching location: %v\n", prefLocation)
+				debugLog("Found matching location: %v\n", prefLocation)
 				match = true
 				break
 			}
 		}
 
 		if !match {
-			fmt.Fprintf(debugOut, "Skipping all events due to no matching locations in %v\n", locations)
+			debugLog("Skipping all events due to no matching locations in %v\n", locations)
 			return events
 		}
 	}
@@ -85,7 +84,7 @@ func nextEvent(items []*calendar.Event, locations []WorkSite, userPrefs *UserPre
 			}
 		}
 	}
-	fmt.Fprintf(debugOut, "nextEvent returning %d events\n", len(events))
+	debugLog("nextEvent returning %d events\n", len(events))
 	return events
 }
 
@@ -125,15 +124,15 @@ func blinkStateForEvent(next []*calendar.Event, priority int) CalendarState {
 				}
 				if (priority == 1 && blinkState.primaryFlash == 0 && blinkState.secondaryFlash > 0) ||
 					(priority == 2 && blinkState.primaryFlash > 0 && blinkState.secondaryFlash == 0) {
-					fmt.Fprintf(debugOut, "Swapping")
+					debugLog("Swapping")
 					blinkState = SwapState(blinkState)
 				}
 			}
-			fmt.Fprintf(debugOut, "Event %v, time %v, delta %v, state %v\n", event.Summary, startTime, delta, blinkState.Name)
+			debugLog("Event %v, time %v, delta %v, state %v\n", event.Summary, startTime, delta, blinkState.Name)
 			// Set priority.  If priority is set, and the other light is flashing but the priority one isn't, swap them.
 
 		} else {
-			fmt.Println(err)
+			errorLog("%v\n", err)
 			break
 		}
 	}
@@ -158,11 +157,11 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *UserPrefs) ([]
 		}
 		for _, event := range events.Items {
 			if event.EventType == "workingLocation" {
-				// The calendar event can return three or more working locations: 
+				// The calendar event can return three or more working locations:
 				// 1. The recurring one for the given day of the week
 				// 2. The override for that particular day
 				// 3. Any time overrides that are currently set for specific hours of the day.
-				// 
+				//
 				// The logic here isn't complicated enough to manage matching events to
 				// a location, so instead, gather the latest all-date event and all
 				// time overrides.  Any event that matches one of those will have an
@@ -170,7 +169,7 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *UserPrefs) ([]
 				isAllDay := (event.Start.DateTime == "")
 				thisCreated, err := time.Parse(time.RFC3339, event.Created)
 				if err != nil || (thisCreated.Before(locationCreated) && isAllDay) {
-					fmt.Fprintf(debugOut, "Skipping location event %v because it's before the current one\n", event.Summary)
+					debugLog("Skipping location event %v because it's before the current one\n", event.Summary)
 					continue
 				}
 				locationProperties := event.WorkingLocationProperties
@@ -186,10 +185,10 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *UserPrefs) ([]
 					location = WorkSite{SiteType: locationType, Name: locationString}
 					locationCreated = thisCreated
 				} else {
-					fmt.Fprintf(debugOut, "Location Override detected: calendar %v, location %v", calendar, location)
+					debugLog("Location Override detected: calendar %v, location %v", calendar, location)
 					locations = append(locations, WorkSite{SiteType: locationType, Name: locationString})
 				}
-				fmt.Fprintf(debugOut, "Location detected: calendar %v, location %v\n", calendar, location)
+				debugLog("Location detected: calendar %v, location %v\n", calendar, location)
 			} else if event.EventType == "outOfOffice" {
 				// OOO events don't use an empty start time to indicate an all-day event.
 				// Instead, check if the start is before our current window and the end
@@ -197,22 +196,22 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *UserPrefs) ([]
 				eventStart, err1 := time.Parse(time.RFC3339, event.Start.DateTime)
 				eventEnd, err2 := time.Parse(time.RFC3339, event.End.DateTime)
 				if err1 != nil || err2 != nil {
-					fmt.Fprintf(debugOut, "Skipping event %v because of time parse errors: %v, %v\n", event.Summary, err1, err2)
+					debugLog("Skipping event %v because of time parse errors: %v, %v\n", event.Summary, err1, err2)
 				}
 				if eventStart.Before(now) && eventEnd.After(endTime) {
-					fmt.Fprintf(debugOut, "Skipping calendar %v due to OOO\n", calendar)
+					debugLog("Skipping calendar %v due to OOO\n", calendar)
 					skip = true
 					break
 				} else {
-					fmt.Fprintf(debugOut, "Not applying OOO event %v to calendar %v\n", event, calendar)
+					debugLog("Not applying OOO event %v to calendar %v\n", event, calendar)
 				}
 			}
 		}
 		if !skip {
 			if !locationCreated.IsZero() {
-				fmt.Fprintf(debugOut, "Adding final location %v\n", location)
+				debugLog("Adding final location %v\n", location)
 				locations = append(locations, location)
-				fmt.Fprintf(debugOut, "Locations: %v\n", locations)
+				debugLog("Locations: %v\n", locations)
 			}
 			allEvents = append(allEvents, events.Items...)
 		}
@@ -223,15 +222,15 @@ func fetchEvents(now time.Time, srv *calendar.Service, userPrefs *UserPrefs) ([]
 		seen := make(map[string]bool)
 		for _, event := range allEvents {
 			if seen[event.Id] {
-				fmt.Fprintf(debugOut, "Skipping duplicate event with ID %v\n", event.Id)
+				debugLog("Skipping duplicate event with ID %v\n", event.Id)
 				continue
 			}
 			if event.EventType == "workingLocation" || event.EventType == "outOfOffice" {
-				fmt.Fprintf(debugOut, "Skipping working location/OOO event %v\n", event.Summary)
+				debugLog("Skipping working location/OOO event %v\n", event.Summary)
 				continue
 			}
 			if event.Start.DateTime == "" {
-				fmt.Fprintf(debugOut, "Skipping all-day event %v\n", event.Summary)
+				debugLog("Skipping all-day event %v\n", event.Summary)
 				continue
 			}
 			filtered = append(filtered, event)

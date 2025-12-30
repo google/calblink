@@ -17,7 +17,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"time"
@@ -27,6 +26,7 @@ import (
 
 // flags
 var debugFlag = flag.Bool("debug", false, "Show debug messages")
+var verboseFlag = flag.Bool("verbose", false, "Show verbose debug messages (forces --debug to true)")
 var clientSecretFlag = flag.String("clientsecret", "client_secret.json", "Path to JSON file containing client secret")
 var calNameFlag = flag.String("calendar", "primary", "Name of calendar to base blinker on (overrides value in config file)")
 var configFileFlag = flag.String("config", "conf.json", "Path to configuration file")
@@ -37,8 +37,16 @@ var showDotsFlag = flag.Bool("show_dots", true, "Whether to show progress dots a
 var runAsServiceFlag = flag.Bool("runAsService", false, "Whether to run as a service or remain live in the current shell")
 var serviceFlag = flag.String("service", "", "Control the system service.")
 
-var debugOut io.Writer = io.Discard
-var dotOut io.Writer = io.Discard
+type debugLevel int
+
+const (
+	debugOff debugLevel = iota
+	debugOn
+	debugVerbose
+)
+
+var debug debugLevel = debugOff
+var dots bool = false
 
 // Necessary status for running as a service
 type program struct {
@@ -59,6 +67,30 @@ func setHourMinuteFromTime(t time.Time) time.Time {
 	return time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
 }
 
+// Log methods
+
+func errorLog(format string, args ...any) {
+	log.Printf(format, args...)
+}
+
+func debugLog(format string, args ...any) {
+	if debug >= debugOn {
+		log.Printf(format, args...)
+	}
+}
+
+func verboseLog(format string, args ...any) {
+	if debug >= debugVerbose {
+		log.Printf(format, args...)
+	}
+}
+
+func printDot(s string) {
+	if dots {
+		fmt.Print(s)
+	}
+}
+
 // Print output methods
 
 func usage() {
@@ -71,7 +103,11 @@ func main() {
 	flag.Parse()
 
 	if *debugFlag {
-		debugOut = os.Stdout
+		debug = debugOn
+	}
+
+	if *verboseFlag {
+		debug = debugVerbose
 	}
 
 	userPrefs := readUserPrefs()
@@ -102,7 +138,7 @@ func main() {
 	})
 
 	if userPrefs.ShowDots && !isService {
-		dotOut = os.Stdout
+		dots = true
 	}
 
 	prg := &program{
@@ -155,31 +191,31 @@ func runLoop(p *program) {
 			if userPrefs.SkipDays[weekday] {
 				tomorrow := tomorrow()
 				Black.Execute(blinkerState)
-				fmt.Fprintf(debugOut, "Sleeping until tomorrow (%v) because it's a skip day\n", tomorrow)
-				fmt.Fprint(dotOut, "~")
+				debugLog("Sleeping until tomorrow (%v) because it's a skip day\n", tomorrow)
+				printDot("~")
 				nextEvent = tomorrow
 				continue
 			}
 			if userPrefs.StartTime != nil {
 				start := setHourMinuteFromTime(*userPrefs.StartTime)
-				fmt.Fprintf(debugOut, "Start time: %v\n", start)
+				debugLog("Start time: %v\n", start)
 				if diff := time.Since(start); diff < 0 {
 					Black.Execute(blinkerState)
-					fmt.Fprintf(debugOut, "Sleeping %v because start time after now\n", -diff)
-					fmt.Fprint(dotOut, ">")
+					debugLog("Sleeping %v because start time after now\n", -diff)
+					printDot(">")
 					nextEvent = start
 					continue
 				}
 			}
 			if userPrefs.EndTime != nil {
 				end := setHourMinuteFromTime(*userPrefs.EndTime)
-				fmt.Fprintf(debugOut, "End time: %v\n", end)
+				debugLog("End time: %v\n", end)
 				if diff := time.Since(end); diff > 0 {
 					Black.Execute(blinkerState)
 					tomorrow := tomorrow()
 					untilTomorrow := tomorrow.Sub(now)
-					fmt.Fprintf(debugOut, "Sleeping %v until tomorrow because end time %v before now\n", untilTomorrow, diff)
-					fmt.Fprint(dotOut, "<")
+					debugLog("Sleeping %v until tomorrow because end time %v before now\n", untilTomorrow, diff)
+					printDot("<")
 					nextEvent = tomorrow
 					continue
 				}
@@ -192,8 +228,8 @@ func runLoop(p *program) {
 				if failures > failureRetries {
 					MagentaFlash.Execute(blinkerState)
 				}
-				fmt.Fprintf(os.Stderr, "Error receiving events from server:\n%v\n", err)
-				fmt.Fprint(dotOut, ",")
+				errorLog("Error receiving events from server:\n%v\n", err)
+				printDot(",")
 				nextEvent = now.Add(time.Duration(userPrefs.PollInterval) * time.Second)
 				continue
 			} else {
@@ -202,7 +238,7 @@ func runLoop(p *program) {
 			blinkState := blinkStateForEvent(next, userPrefs.PriorityFlashSide)
 
 			blinkState.Execute(blinkerState)
-			fmt.Fprint(dotOut, ".")
+			printDot(".")
 			nextEvent = now.Add(time.Duration(userPrefs.PollInterval) * time.Second)
 		}
 	}
