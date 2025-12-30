@@ -207,6 +207,14 @@ func readUserPrefs() *UserPrefs {
 		// primary file doesn't exist, try the secondary.
 		configFile = *backupConfigFileFlag
 	}
+	_, err = os.Stat(configFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		// There is no config file, so grab the default prefs.
+		// Lack of a config file is not a fatal error.
+		debugLog("No config file found.\n")
+		return getDefaultPrefs()
+	}
+	debugLog("Reading from config file %v\n", configFile)
 	if strings.HasSuffix(configFile, "toml") {
 		return readTomlPrefs(configFile)
 	} else {
@@ -214,8 +222,7 @@ func readUserPrefs() *UserPrefs {
 	}
 }
 
-func readTomlPrefs(configFile string) *UserPrefs {
-	prefs := tomlLayout{}
+func getDefaultPrefs() *UserPrefs {
 	userPrefs := &UserPrefs{}
 	// Set defaults from command line
 	userPrefs.PollInterval = *pollIntervalFlag
@@ -223,6 +230,12 @@ func readTomlPrefs(configFile string) *UserPrefs {
 	userPrefs.ResponseState = ResponseState(*responseStateFlag)
 	userPrefs.DeviceFailureRetries = *deviceFailureRetriesFlag
 	userPrefs.ShowDots = *showDotsFlag
+	return userPrefs
+}
+
+func readTomlPrefs(configFile string) *UserPrefs {
+	prefs := tomlLayout{}
+	userPrefs := getDefaultPrefs()
 	_, err := toml.DecodeFile(configFile, &prefs)
 	debugLog("Decoded TOML: %v\n", prefs)
 	if err != nil {
@@ -291,13 +304,8 @@ func readTomlPrefs(configFile string) *UserPrefs {
 }
 
 func readJsonPrefs(configFile string) *UserPrefs {
-	userPrefs := &UserPrefs{}
 	// Set defaults from command line
-	userPrefs.PollInterval = *pollIntervalFlag
-	userPrefs.Calendars = []string{*calNameFlag}
-	userPrefs.ResponseState = ResponseState(*responseStateFlag)
-	userPrefs.DeviceFailureRetries = *deviceFailureRetriesFlag
-	userPrefs.ShowDots = *showDotsFlag
+	userPrefs := getDefaultPrefs()
 	file, err := os.Open(configFile)
 	defer file.Close()
 	if err != nil {
