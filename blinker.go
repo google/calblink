@@ -105,7 +105,7 @@ func (blinker *BlinkerState) reinitialize() error {
 		if blinker.failures > blinker.maxFailures {
 			log.Fatalf("Unable to initialize blink(1): %v", err)
 		}
-		fmt.Fprint(dotOut, "X")
+		printDot("X")
 	} else {
 		blinker.failures = 0
 	}
@@ -121,22 +121,22 @@ func (blinker *BlinkerState) setState(state blink1.State) error {
 	if blinker.failures > 0 {
 		err := blinker.reinitialize()
 		if err != nil {
-			fmt.Fprintf(debugOut, "Reinitialize failed, error %v\n", err)
+			errorLog("Reinitialize failed, error %v\n", err)
 			return err
 		}
 	}
 	err := blinker.device.SetState(state)
 	if err != nil {
-		fmt.Fprintf(debugOut, "Re-initializing because of error %v\n", err)
+		errorLog("Re-initializing because of error %v\n", err)
 		err = blinker.reinitialize()
 		if err != nil {
-			fmt.Fprintf(debugOut, "Reinitialize failed, error %v\n", err)
+			errorLog("Reinitialize failed, error %v\n", err)
 			return err
 		}
 		// Try one more time before giving up for this pass.
 		err = blinker.device.SetState(state)
 		if err != nil {
-			fmt.Fprintf(debugOut, "Setting blinker state failed, error %v\n", err)
+			errorLog("Setting blinker state failed, error %v\n", err)
 		}
 	} else {
 		blinker.failures = 0
@@ -158,13 +158,13 @@ func (blinker *BlinkerState) patternRunner() {
 		select {
 		case newState := <-blinker.newState:
 			if newState != currentState || failing {
-				fmt.Fprintf(debugOut, "Changing from state %v to %v\n", currentState, newState)
+				debugLog("Changing from state %v to %v\n", currentState, newState)
 				currentState = newState
 				if newState.primaryFlash > 0 || newState.secondaryFlash > 0 {
 					ticker = time.After(time.Millisecond)
 				} else {
 					if ticker != nil {
-						fmt.Fprintf(debugOut, "Killing timer\n")
+						debugLog("Killing timer\n")
 						ticker = nil
 					}
 					state1 := newState.primary
@@ -176,11 +176,11 @@ func (blinker *BlinkerState) patternRunner() {
 					failing = (err1 != nil) || (err2 != nil)
 				}
 			} else {
-				fmt.Fprintf(debugOut, "Retaining state %v unchanged\n", newState)
+				debugLog("Retaining state %v unchanged\n", newState)
 			}
 
 		case <-ticker:
-			fmt.Fprintf(debugOut, "Timer fired\n")
+			verboseLog("Timer fired\n")
 			state1 := currentState.primary
 			state2 := currentState.secondary
 			if stateFlip {
@@ -207,7 +207,7 @@ func (blinker *BlinkerState) patternRunner() {
 			// We set state1 on LED 1 and state2 on LED 2.  On an original (mk1) blink(1) state2 will be ignored.
 			state1.LED = blink1.LED1
 			state2.LED = blink1.LED2
-			fmt.Fprintf(debugOut, "Setting state (%v and %v)\n", state1, state2)
+			verboseLog("Setting state (%v and %v)\n", state1, state2)
 			err1 := blinker.setState(state1)
 			err2 := blinker.setState(state2)
 			failing = (err1 != nil) || (err2 != nil)
@@ -216,7 +216,7 @@ func (blinker *BlinkerState) patternRunner() {
 			if state1.Duration == 0 {
 				nextTick = state2.Duration
 			}
-			fmt.Fprintf(debugOut, "Next tick: %s\n", nextTick)
+			verboseLog("Next tick: %s\n", nextTick)
 			ticker = time.After(nextTick)
 		}
 	}
@@ -232,7 +232,7 @@ func signalHandler(blinker *BlinkerState) {
 		s := <-interrupt
 		if s == syscall.SIGQUIT {
 			fmt.Println("Turning on debug mode.")
-			debugOut = os.Stdout
+			debug = debugOn
 			continue
 		}
 		if blinker.failures == 0 {
