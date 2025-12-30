@@ -109,8 +109,9 @@ To use calblink, you need the following:
 First off, run it with the --help option to see what the command-line options
 are. Useful, perhaps, but maybe not what you want to use every time you run it.
 
-calblink will look for a file named (by default) conf.json for its configuration
-options. conf.json includes several useful options you can set:
+calblink will look for a file named (by default) conf.toml for its configuration
+options; if that doesn't exist, it will look for conf.json.  The configuration file
+includes several useful options you can set:
 
 *   excludes - a list of event titles which it will ignore. If you like blocking
     out time with "Make Time" or similar, you can add these names to the
@@ -169,26 +170,26 @@ options. conf.json includes several useful options you can set:
     *   'office:NAME' to match an office location called NAME.
     *   'custom:NAME' to match a custom location called NAME.
 
-An example file:
+An example TOML file:
 
-```json
-    {
-        "excludes": ["Commute"],
-        "skipDays": ["Saturday", "Sunday"],
-        "startTime": "08:45",
-        "endTime": "18:00",
-        "pollInterval": 60,
-        "calendars": ["primary", "username@example.com"],
-        "responseState": "accepted",
-        "multiEvent": "true",
-        "priorityFlashSide": 1,
-        "workingLocations": ["home"]
-    }
+```toml
+        excludes = ["Commute"]
+        skipDays = ["Saturday", "Sunday"]
+        startTime = "08:45"
+        endTime = "18:00"
+        pollInterval = 60
+        calendars = ["primary", "username@example.com"]
+        responseState = "accepted"
+        multiEvent = true
+        priorityFlashSide = 1
+        workingLocations = ["home"]
 ```
 
-(Yes, the curly braces are required.  Sorry.  It's a JSON dictionary.)
-
-
+The JSON version should be considered deprecated, and new options will not be added
+to it.  At some later date, it may be removed entirely.  Migrating to TOML is
+recommended, not least because it's a much cleaner file format that supports handy
+features like "comments" and "trailing commas in arrays" and "not needing to be wrapped
+in braces and having a comma after every field".
 
 
 ### New Requirements
