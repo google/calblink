@@ -18,29 +18,34 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/BurntSushi/toml"
 )
 
 // Configuration file:
-// JSON file with the following structure:
-// {
-//   excludes: [ "event", "names", "to", "ignore"],
-//   excludePrefixes: [ "prefixes", "to", "ignore"],
-//   startTime: "hh:mm (24 hr format) to start blinking at every day",
-//   endTime: "hh:mm (24 hr format) to stop blinking at every day",
-//   skipDays: [ "weekdays", "to", "skip"],
-//   pollInterval: 30
-//   calendar: "calendar"
-//   responseState: "all"
-//   deviceFailureRetries: 10
-//   showDots: true
-//   multiEvent: true
-//   priorityFlashSide: 1
-//}
+// TOML file with the following structure:
+//   excludes = ["event", "names", "to", "ignore"]
+//   excludePrefixes = ["prefixes", "to", "ignore"]
+//   startTime = "hh:mm (24 hr format) to start blinking at every day"
+//   endTime = "hh:mm (24 hr format) to stop blinking at every day"
+//   skipDays = [ "weekdays", "to", "skip"]
+//   pollInterval = 30
+//   calendar = "calendar"
+//   responseState = "all"
+//   deviceFailureRetries = 10
+//   showDots = true
+//   multiEvent = true
+//   priorityFlashSide = 1
+//
+// An older JSON format is also supported but you don't want to use it.
+//
 // Notes on items:
 // Calendar is the calendar ID - the email address of the calendar.  For a person's calendar, that's their email.
 //   For a secondary calendar, it's the base64 string @group.calendar.google.com on the calendar details page. "primary"
@@ -85,6 +90,23 @@ type prefLayout struct {
 	DeviceFailureRetries int64
 	ShowDots             string
 	MultiEvent           string
+	PriorityFlashSide    int64
+	WorkingLocations     []string
+}
+
+type tomlLayout struct {
+	Excludes             []string
+	ExcludePrefixes      []string
+	StartTime            string
+	EndTime              string
+	SkipDays             []string
+	PollInterval         int64
+	Calendar             string
+	Calendars            []string
+	ResponseState        string
+	DeviceFailureRetries int64
+	ShowDots             bool
+	MultiEvent           bool
 	PriorityFlashSide    int64
 	WorkingLocations     []string
 }
@@ -179,6 +201,21 @@ func makeWorkSite(location string) WorkSite {
 // User preferences methods
 
 func readUserPrefs() *UserPrefs {
+	configFile := *configFileFlag
+	_, err := os.Stat(configFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		// primary file doesn't exist, try the secondary.
+		configFile = *backupConfigFileFlag
+	}
+	if strings.HasSuffix(configFile, "toml") {
+		return readTomlPrefs(configFile)
+	} else {
+		return readJsonPrefs(configFile)
+	}
+}
+
+func readTomlPrefs(configFile string) *UserPrefs {
+	prefs := tomlLayout{}
 	userPrefs := &UserPrefs{}
 	// Set defaults from command line
 	userPrefs.PollInterval = *pollIntervalFlag
@@ -186,7 +223,82 @@ func readUserPrefs() *UserPrefs {
 	userPrefs.ResponseState = ResponseState(*responseStateFlag)
 	userPrefs.DeviceFailureRetries = *deviceFailureRetriesFlag
 	userPrefs.ShowDots = *showDotsFlag
-	file, err := os.Open(*configFileFlag)
+	_, err := toml.DecodeFile(configFile, &prefs)
+	debugLog("Decoded TOML: %v\n", prefs)
+	if err != nil {
+		log.Fatalf("Unable to parse config file %v", err)
+	}
+	if prefs.StartTime != "" {
+		startTime, err := time.Parse("15:04", prefs.StartTime)
+		if err != nil {
+			log.Fatalf("Invalid start time %v : %v", prefs.StartTime, err)
+		}
+		userPrefs.StartTime = &startTime
+	}
+	if prefs.EndTime != "" {
+		endTime, err := time.Parse("15:04", prefs.EndTime)
+		if err != nil {
+			log.Fatalf("Invalid end time %v : %v", prefs.EndTime, err)
+		}
+		userPrefs.EndTime = &endTime
+	}
+	userPrefs.Excludes = make(map[string]bool)
+	for _, item := range prefs.Excludes {
+		debugLog("Excluding item %v\n", item)
+		userPrefs.Excludes[item] = true
+	}
+	userPrefs.ExcludePrefixes = prefs.ExcludePrefixes
+	weekdays := make(map[string]int)
+	for i := 0; i < 7; i++ {
+		weekdays[time.Weekday(i).String()] = i
+	}
+	for _, day := range prefs.SkipDays {
+		i, ok := weekdays[day]
+		if ok {
+			userPrefs.SkipDays[i] = true
+		} else {
+			log.Fatalf("Invalid day in skipdays: %v", day)
+		}
+	}
+	if prefs.Calendar != "" {
+		userPrefs.Calendars = []string{prefs.Calendar}
+	}
+	if len(prefs.Calendars) > 0 {
+		userPrefs.Calendars = prefs.Calendars
+	}
+	if prefs.PollInterval != 0 {
+		userPrefs.PollInterval = int(prefs.PollInterval)
+	}
+	if prefs.ResponseState != "" {
+		userPrefs.ResponseState = ResponseState(prefs.ResponseState)
+		if !userPrefs.ResponseState.isValidState() {
+			log.Fatalf("Invalid response state %v", prefs.ResponseState)
+		}
+	}
+	if prefs.DeviceFailureRetries != 0 {
+		userPrefs.DeviceFailureRetries = int(prefs.DeviceFailureRetries)
+	}
+	userPrefs.ShowDots = prefs.ShowDots
+	userPrefs.MultiEvent = prefs.MultiEvent
+	if prefs.PriorityFlashSide != 0 {
+		userPrefs.PriorityFlashSide = int(prefs.PriorityFlashSide)
+	}
+	for _, location := range prefs.WorkingLocations {
+		userPrefs.WorkingLocations = append(userPrefs.WorkingLocations, makeWorkSite(location))
+	}
+	debugLog("User prefs: %v\n", userPrefs)
+	return userPrefs
+}
+
+func readJsonPrefs(configFile string) *UserPrefs {
+	userPrefs := &UserPrefs{}
+	// Set defaults from command line
+	userPrefs.PollInterval = *pollIntervalFlag
+	userPrefs.Calendars = []string{*calNameFlag}
+	userPrefs.ResponseState = ResponseState(*responseStateFlag)
+	userPrefs.DeviceFailureRetries = *deviceFailureRetriesFlag
+	userPrefs.ShowDots = *showDotsFlag
+	file, err := os.Open(configFile)
 	defer file.Close()
 	if err != nil {
 		// Lack of a config file is not a fatal error.
